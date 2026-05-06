@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
-import { SquarePen, Columns3, Settings, PanelLeftClose, PanelLeft, CalendarClock } from 'lucide-react';
+import { SquarePen, Columns3, Settings, PanelLeftClose, PanelLeft, CalendarClock, Sparkles } from 'lucide-react';
 import { useStore } from '../lib/store';
 
 const isMac = /Mac/.test(navigator.userAgent);
@@ -80,6 +80,13 @@ export function Sidebar() {
           label="Schedules"
           to="/cron"
           active={isActive('/cron')}
+          collapsed={collapsed}
+        />
+        <SidebarLink
+          icon={<Sparkles size={18} />}
+          label="Skills"
+          to="/skills"
+          active={isActive('/skills')}
           collapsed={collapsed}
         />
         <SidebarLink

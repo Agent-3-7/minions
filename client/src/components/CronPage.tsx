@@ -238,9 +238,9 @@ export function CronPage() {
           <div className="flex items-center gap-2.5 min-w-0">
             <CalendarClock size={20} className="text-zinc-500 dark:text-zinc-400 shrink-0" />
             <div className="min-w-0">
-              <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Cron</h1>
+              <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Scheduled Jobs</h1>
               <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate">
-                Hermes scheduled jobs and saved run output
+                Hermes cron jobs and saved run output
               </p>
             </div>
           </div>

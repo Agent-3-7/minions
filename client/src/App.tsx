@@ -6,6 +6,7 @@ import { NewTaskPage } from './components/NewTaskPage';
 import { TaskDetailPage } from './components/TaskDetailPage';
 import { SettingsPage } from './components/SettingsPage';
 import { CronPage } from './components/CronPage';
+import { SkillsPage } from './components/SkillsPage';
 import { useTasks } from './hooks/useTasks';
 import { useTheme } from './hooks/useTheme';
 
@@ -23,6 +24,7 @@ function AppShell() {
           <Route path="/tasks/new" element={<NewTaskPage />} />
           <Route path="/tasks/:taskId" element={<TaskDetailPage />} />
           <Route path="/cron" element={<CronPage />} />
+          <Route path="/skills" element={<SkillsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>
       </main>

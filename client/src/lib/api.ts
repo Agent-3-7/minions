@@ -16,6 +16,17 @@ export type { AgentRunSettings };
 
 export const BASE = '/api';
 
+export interface SkillMeta {
+  id: string;
+  name: string;
+  description: string;
+  key: string;
+  source: string;
+  bundled: boolean;
+  readOnly: boolean;
+  autoIncluded: boolean;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const { headers: extraHeaders, ...rest } = init ?? {};
   const res = await fetch(`${BASE}${path}`, {
@@ -88,6 +99,14 @@ export function fetchTaskAgentSettings(taskId: string) {
 
 export function fetchCronJobs(includeDisabled = true) {
   return request<{ jobs: CronJob[] }>(`/cron/jobs?includeDisabled=${includeDisabled ? 'true' : 'false'}`);
+}
+
+export function fetchSkills() {
+  return request<{ skills: SkillMeta[] }>('/skills');
+}
+
+export function fetchSkillContent(id: string) {
+  return request<{ skill: SkillMeta; content: string }>(`/skills/${encodeURIComponent(id)}/content`);
 }
 
 export function fetchCronRuns(jobId: string, limit = 20) {

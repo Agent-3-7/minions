@@ -5,6 +5,7 @@ import { chatRouter } from './routes/chat.js';
 import { createHeartbeatRouter } from './routes/heartbeat.js';
 import { createAgentRouter, createTaskAgentSettingsRouter } from './routes/agent.js';
 import { createCronRouter, createTaskCronRouter } from './routes/cron.js';
+import { skillsRouter } from './routes/skills.js';
 import { HermesWorkerAdapter } from './adapters/hermes-worker.js';
 import { initSSE, addClient } from './events.js';
 
@@ -32,6 +33,7 @@ app.use('/api/tasks', chatRouter);
 app.use('/api/agent', createAgentRouter(adapter));
 app.use('/api/cron', createCronRouter(adapter));
 app.use('/api/heartbeat', createHeartbeatRouter(adapter));
+app.use('/api/skills', skillsRouter);
 
 export { adapter };
 export default app;
