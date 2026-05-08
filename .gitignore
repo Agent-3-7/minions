@@ -2,6 +2,7 @@ node_modules/
 dist/
 .env
 *.tsbuildinfo
+.vscode/
 
 __pycache__/
 *.py[cod]

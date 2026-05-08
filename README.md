@@ -6,7 +6,7 @@ Hermes Agent is powerful, but running real work on it means juggling terminal se
 
 Minions gives you one screen to create, supervise, and review autonomous Hermes Agent work.
 
-[Try hosted on Agent37](https://www.agent37.com)
+[Hosted access on Agent37 opens May 10](https://www.agent37.com). Run locally today.
 
 ## Demo
 
@@ -50,7 +50,7 @@ npm run dev
 
 Open [http://localhost:6969](http://localhost:6969).
 
-No `.env` file needed. For production, run `npm run prod`.
+For production, run `npm run prod`.
 
 ## How It Works
 
@@ -72,10 +72,9 @@ Each task is a persistent Hermes root session. You talk to it, it works, it chec
 
 ## Roadmap
 
-- **File support**: attach files to tasks, browse artifacts agents create
+- **Cron supervision**: automatically monitor, recover, and report on scheduled agent jobs
 - **Notifications**: get alerted via Telegram, WhatsApp, or webhook when a task is blocked or needs review
 - **Skills library**: pluggable skill templates for common workflows (lead gen, web research, content pipelines, data collection, competitive monitoring, outbound sequences)
-- **Cron management**: edit schedules and parameters, delete jobs, failure alerts
 - **Workspace file browser**: see files agents have created per task without SSH-ing in
 - **OpenClaw adapter**: run Minions against OpenClaw-hosted agents
 
