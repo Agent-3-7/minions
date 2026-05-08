@@ -10,9 +10,7 @@ Create tasks through chat, and your Hermes agent works on them autonomously, run
 
 ## Demo
 
-[![Minions demo showing a task board for autonomous Hermes Agent work](demo/minions-demo-poster.jpg)](demo/loom-minions.mp4)
-
-[Watch the 64-second demo](demo/loom-minions.mp4)
+<video src="https://github.com/user-attachments/assets/beb5896d-a5f8-4b27-9f02-773cf3d93394" poster="demo/minions-demo-poster.jpg" controls width="100%"></video>
 
 ## Why Minions Exists
 
