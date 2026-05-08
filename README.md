@@ -6,11 +6,15 @@ Hermes Agent is powerful, but running real work on it means juggling terminal se
 
 Minions gives you one screen to create, supervise, and review autonomous Hermes Agent work.
 
-[Hosted access on Agent37 opens May 10](https://www.agent37.com). Run locally today.
+Hosted access opens May 10 on [Agent37](https://www.agent37.com). Run locally today.
+
+## Preview
+
+Minions task dashboard
 
 ## Demo
 
-<video src="https://github.com/user-attachments/assets/beb5896d-a5f8-4b27-9f02-773cf3d93394" poster="demo/minions-demo-poster.jpg" controls width="100%"></video>
+
 
 ## Why Minions Exists
 
