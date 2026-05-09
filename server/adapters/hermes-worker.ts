@@ -1,5 +1,5 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { existsSync, mkdirSync } from 'node:fs';
+import { spawn, execFileSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { existsSync, mkdirSync, realpathSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { createInterface, type Interface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
@@ -32,6 +32,19 @@ type PendingStream = {
 
 type Pending = PendingRequest | PendingStream;
 
+function resolveAgentDirFromHermesCli(): string | undefined {
+  try {
+    const hermesBin = execFileSync('which', ['hermes'], { encoding: 'utf8' }).trim();
+    const real = realpathSync(hermesBin);
+    // Typical layout: <agent-dir>/venv/bin/hermes → agent dir is 3 levels up
+    const candidate = resolve(dirname(real), '..', '..');
+    if (existsSync(join(candidate, 'run_agent.py'))) return candidate;
+  } catch {
+    // `which` failed or path doesn't resolve — not installed via standard installer
+  }
+  return undefined;
+}
+
 function resolvePython(): string {
   if (process.env.HERMES_PYTHON) return expandHomePrefix(process.env.HERMES_PYTHON);
 
@@ -39,9 +52,22 @@ function resolvePython(): string {
   if (process.env.HERMES_AGENT_DIR) {
     candidates.push(join(expandHomePrefix(process.env.HERMES_AGENT_DIR), 'venv/bin/python'));
   }
+  const hermesHome = process.env.HERMES_HOME?.trim();
+  if (hermesHome) {
+    candidates.push(join(expandHomePrefix(hermesHome), 'hermes-agent/venv/bin/python'));
+  }
   candidates.push(expandHomePrefix('~/.hermes/hermes-agent/venv/bin/python'));
 
-  return candidates.find((candidate) => existsSync(candidate)) ?? 'python3';
+  const found = candidates.find((candidate) => existsSync(candidate));
+  if (found) return found;
+
+  const cliAgentDir = resolveAgentDirFromHermesCli();
+  if (cliAgentDir) {
+    const venvPython = join(cliAgentDir, 'venv/bin/python');
+    if (existsSync(venvPython)) return venvPython;
+  }
+
+  return 'python3';
 }
 
 function resolveWorkerScript(): string {

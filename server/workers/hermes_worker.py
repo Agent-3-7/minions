@@ -120,6 +120,23 @@ def _send_error(request_id: str, exc: BaseException) -> None:
     _send({"id": request_id, "type": "error", "error": _error_payload(exc)})
 
 
+def _resolve_agent_dir_from_hermes_cli() -> Path | None:
+    import shutil
+
+    hermes_bin = shutil.which("hermes")
+    if not hermes_bin:
+        return None
+    try:
+        real = Path(hermes_bin).resolve()
+        # Typical layout: <agent-dir>/venv/bin/hermes
+        candidate = real.parent.parent.parent
+        if (candidate / "run_agent.py").exists():
+            return candidate
+    except OSError:
+        pass
+    return None
+
+
 def _discover_agent_dir() -> Path:
     candidates: list[Path] = []
 
@@ -143,6 +160,10 @@ def _discover_agent_dir() -> Path:
         seen.add(key)
         if (resolved / "run_agent.py").exists():
             return resolved
+
+    cli_dir = _resolve_agent_dir_from_hermes_cli()
+    if cli_dir:
+        return cli_dir
 
     raise WorkerError(
         "Hermes agent source not found.",
