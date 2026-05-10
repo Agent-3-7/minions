@@ -4,20 +4,42 @@ import { MoreHorizontal } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { Task } from '@shared/types';
 import { timeAgo } from '../lib/format';
+import { hasUnseenAgentResponse } from '../lib/taskState';
 import { TaskContextMenu } from './TaskContextMenu';
 
 function TaskCardBody({ task }: { task: Task }) {
+  const isUnseen = hasUnseenAgentResponse(task);
+
   return (
     <div>
-      <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 line-clamp-2">
+      <p
+        className={`text-sm text-zinc-900 dark:text-zinc-100 line-clamp-2 ${
+          isUnseen ? 'font-semibold' : 'font-medium'
+        }`}
+      >
         {task.title}
       </p>
       {task.description && (
-        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400 line-clamp-1">
+        <p
+          className={`mt-1 text-xs line-clamp-1 ${
+            isUnseen
+              ? 'text-zinc-600 dark:text-zinc-300'
+              : 'text-zinc-500 dark:text-zinc-400'
+          }`}
+        >
           {task.description}
         </p>
       )}
-      <div className="mt-3 flex items-center text-[11px] leading-none text-zinc-400 dark:text-zinc-500">
+      <div
+        className={`mt-3 flex items-center gap-1.5 text-[11px] leading-none ${
+          isUnseen
+            ? 'font-semibold text-zinc-700 dark:text-zinc-200'
+            : 'text-zinc-400 dark:text-zinc-500'
+        }`}
+      >
+        {isUnseen && (
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-zinc-700 ring-4 ring-zinc-100 dark:bg-zinc-200 dark:ring-zinc-800" />
+        )}
         <span>{timeAgo(task.updated_at)}</span>
       </div>
     </div>

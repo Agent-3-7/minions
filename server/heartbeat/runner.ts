@@ -88,6 +88,11 @@ async function checkTaskWithTimeout(task: Task, adapter: AgentAdapter): Promise<
   }
 }
 
+function broadcastAgentResponse(taskId: string, at: number) {
+  const updated = queries.recordAgentResponse(taskId, at);
+  if (updated) broadcast({ type: 'task_updated', task: updated });
+}
+
 async function checkTask(task: Task, adapter: AgentAdapter): Promise<void> {
   const recentLogs = queries.getHeartbeatLogs(task.id, 3);
   const prompt = buildCheckinPrompt(recentLogs);
@@ -104,7 +109,7 @@ async function checkTask(task: Task, adapter: AgentAdapter): Promise<void> {
 
   if (!status) {
     queries.insertHeartbeatLog(task.id, 'check', { result: 'unparseable_response', raw: response.slice(0, 500) });
-    queries.recordAgentResponse(task.id, responseAt);
+    broadcastAgentResponse(task.id, responseAt);
     return;
   }
 
@@ -122,6 +127,6 @@ async function checkTask(task: Task, adapter: AgentAdapter): Promise<void> {
     });
     if (updated) broadcast({ type: 'task_updated', task: updated });
   } else {
-    queries.recordAgentResponse(task.id, responseAt);
+    broadcastAgentResponse(task.id, responseAt);
   }
 }

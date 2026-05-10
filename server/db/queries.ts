@@ -17,15 +17,22 @@ const stmtGetTask = db.prepare('SELECT * FROM tasks WHERE id = ?');
 const stmtInsertTask = db.prepare(`
   INSERT INTO tasks (
     id, title, description, status, agent_model, reasoning_effort,
-    created_at, updated_at, last_agent_response_at
+    created_at, updated_at, last_agent_response_at, last_viewed_at
   )
   VALUES (
     @id, @title, @description, @status, @agent_model, @reasoning_effort,
-    @created_at, @updated_at, @last_agent_response_at
+    @created_at, @updated_at, @last_agent_response_at, @last_viewed_at
   )
 `);
 const stmtDeleteTask = db.prepare('DELETE FROM tasks WHERE id = ?');
 const stmtTouchTask = db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?');
+const stmtMarkTaskViewed = db.prepare(`
+  UPDATE tasks
+  SET last_viewed_at = last_agent_response_at
+  WHERE id = ?
+    AND last_agent_response_at IS NOT NULL
+    AND (last_viewed_at IS NULL OR last_viewed_at < last_agent_response_at)
+`);
 const stmtHeartbeatByTask = db.prepare('SELECT * FROM heartbeat_log WHERE task_id = ? ORDER BY created_at DESC LIMIT ?');
 const stmtHeartbeatAll = db.prepare('SELECT * FROM heartbeat_log ORDER BY created_at DESC LIMIT ?');
 const stmtInsertHeartbeat = db.prepare(`
@@ -74,6 +81,7 @@ export function insertTask(task: {
     created_at: now,
     updated_at: now,
     last_agent_response_at: task.last_agent_response_at ?? null,
+    last_viewed_at: null,
   };
   stmtInsertTask.run(row);
   return row as Task;
@@ -126,6 +134,14 @@ export function touchTask(id: string): void {
 
 export function recordAgentResponse(taskId: string, at = Date.now()): Task | undefined {
   return updateTask(taskId, { last_agent_response_at: at });
+}
+
+export function markTaskViewed(id: string): { task: Task | undefined; changed: boolean } {
+  const result = stmtMarkTaskViewed.run(id);
+  return {
+    task: getTask(id),
+    changed: result.changes > 0,
+  };
 }
 
 export function deleteTask(id: string): boolean {

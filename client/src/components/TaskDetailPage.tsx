@@ -4,7 +4,7 @@ import { MoreHorizontal, Trash2, Loader2, MessageSquare, Activity, Pencil } from
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { StatusIcon } from './StatusIcon';
 import { useStore, optimisticMoveTask } from '../lib/store';
-import { deleteTask, patchTask, moveTask, fetchHeartbeatLogs } from '../lib/api';
+import { deleteTask, patchTask, moveTask, fetchHeartbeatLogs, markTaskViewed } from '../lib/api';
 import { TASK_STATUSES } from '@shared/types';
 import { STATUS_META } from '../lib/constants';
 import { timeAgo } from '../lib/format';
@@ -38,10 +38,29 @@ export function TaskDetailPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const markViewedInFlightRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (task) setTitleDraft(task.title);
   }, [task?.id, task?.title]);
+
+  useEffect(() => {
+    if (!task || task.last_agent_response_at === null) return;
+    if (task.last_viewed_at !== null && task.last_viewed_at >= task.last_agent_response_at) return;
+
+    const key = `${task.id}:${task.last_agent_response_at}`;
+    if (markViewedInFlightRef.current === key) return;
+    markViewedInFlightRef.current = key;
+
+    markTaskViewed(task.id)
+      .then(({ task: updated }) => upsertTask(updated))
+      .catch(() => {})
+      .finally(() => {
+        if (markViewedInFlightRef.current === key) {
+          markViewedInFlightRef.current = null;
+        }
+      });
+  }, [task?.id, task?.last_agent_response_at, task?.last_viewed_at, upsertTask]);
 
   useEffect(() => {
     setActiveTab('chat');

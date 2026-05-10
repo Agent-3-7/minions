@@ -12,6 +12,10 @@ interface AppState {
   toggleSidebar: () => void;
 }
 
+function tasksEqual(a: Task, b: Task): boolean {
+  return a.updated_at === b.updated_at && a.last_viewed_at === b.last_viewed_at;
+}
+
 export const useStore = create<AppState>((set) => ({
   tasks: [],
   tasksLoaded: false,
@@ -24,7 +28,7 @@ export const useStore = create<AppState>((set) => ({
       const idx = state.tasks.findIndex((t) => t.id === task.id);
       if (idx === -1) return { tasks: [...state.tasks, task] };
       const existing = state.tasks[idx];
-      if (existing.updated_at === task.updated_at && existing.status === task.status) return state;
+      if (tasksEqual(existing, task)) return state;
       const next = [...state.tasks];
       next[idx] = task;
       return { tasks: next };

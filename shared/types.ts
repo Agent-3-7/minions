@@ -19,6 +19,7 @@ export interface Task {
   created_at: number;
   updated_at: number;
   last_agent_response_at: number | null;
+  last_viewed_at: number | null;
 }
 
 export interface TaskMessage {

@@ -90,6 +90,12 @@ export function patchTask(id: string, fields: { title?: string; description?: st
   });
 }
 
+export function markTaskViewed(id: string) {
+  return request<{ task: Task }>(`/tasks/${id}/viewed`, {
+    method: 'POST',
+  });
+}
+
 export function createTask(
   description: string,
   title?: string,

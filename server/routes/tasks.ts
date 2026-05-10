@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getAllTasks, getTask, insertTask, updateTask, deleteTask } from '../db/queries.js';
+import { getAllTasks, getTask, insertTask, updateTask, deleteTask, markTaskViewed } from '../db/queries.js';
 import { broadcast } from '../events.js';
 import { TASK_STATUSES } from '../../shared/types.js';
 import type { TaskStatus } from '../../shared/types.js';
@@ -64,6 +64,13 @@ tasksRouter.patch('/:id', (req, res) => {
   if (!updated) return res.status(404).json({ error: 'Task not found' });
   broadcast({ type: 'task_updated', task: updated });
   res.json({ task: updated });
+});
+
+tasksRouter.post('/:id/viewed', (req, res) => {
+  const { task, changed } = markTaskViewed(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+  if (changed) broadcast({ type: 'task_updated', task });
+  res.json({ task });
 });
 
 tasksRouter.delete('/:id', (req, res) => {
