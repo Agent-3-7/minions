@@ -19,6 +19,7 @@ import type {
   TaskStatus,
   HeartbeatSettings,
   ReasoningEffort,
+  UsageStats,
 } from '@shared/types';
 
 export type { AgentRunSettings };
@@ -108,7 +109,7 @@ export function createTask(
 }
 
 export function fetchMessages(taskId: string) {
-  return request<{ messages: TaskMessage[] }>(`/tasks/${taskId}/messages`);
+  return request<{ messages: TaskMessage[]; usage?: UsageStats | null }>(`/tasks/${taskId}/messages`);
 }
 
 export function fetchSession(taskId: string) {

@@ -20,6 +20,9 @@ export interface Task {
   updated_at: number;
   last_agent_response_at: number | null;
   last_viewed_at: number | null;
+  last_usage_input_tokens: number | null;
+  last_usage_output_tokens: number | null;
+  last_usage_total_tokens: number | null;
 }
 
 export interface TaskMessage {

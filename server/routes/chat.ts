@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getTask, updateTask, touchTask, recordAgentResponse } from '../db/queries.js';
+import { getTask, updateTask, touchTask, recordAgentResponse, usageFromTask } from '../db/queries.js';
 import { adapter } from '../app.js';
 import { broadcast, initSSE } from '../events.js';
 import {
@@ -8,6 +8,7 @@ import {
   finishRun,
   getRun,
   getRunStatus,
+  getRunUsage,
   sendSnapshot,
   startRun,
   subscribe,
@@ -16,7 +17,7 @@ import { taskRunSettings, parseRunSettingsBody } from '../agent-settings.js';
 import { TASK_AGENT_SYSTEM_PROMPT } from '../prompts/task-agent.js';
 import { toErrorMessage } from '../errors.js';
 import type { StreamEvent } from '../adapters/types.js';
-import type { Task } from '../../shared/types.js';
+import type { Task, UsageStats } from '../../shared/types.js';
 
 export const chatRouter = Router();
 
@@ -28,11 +29,12 @@ function hasNoSession(task: Task): boolean {
 chatRouter.get('/:id/messages', async (req, res) => {
   const task = getTask(req.params.id);
   if (!task) return res.status(404).json({ error: 'Task not found' });
-  if (hasNoSession(task)) return res.json({ messages: [] });
+  const usage = getRunUsage(task.id) ?? usageFromTask(task);
+  if (hasNoSession(task)) return res.json({ messages: [], usage });
 
   try {
     const messages = await adapter.getMessages(task.id, task.id);
-    res.json({ messages });
+    res.json({ messages, usage });
   } catch (error) {
     res.status(503).json({ error: toErrorMessage(error, 'Hermes session history unavailable') });
   }
@@ -56,6 +58,7 @@ const ERROR_SNAPSHOT_TTL_MS = 5 * 60_000;
 
 async function consumeChatRun(runTask: Task, sessionId: string, content: string, runId: string): Promise<void> {
   let sawDone = false;
+  let doneUsage: UsageStats | undefined;
 
   try {
     const stream = adapter.chatStream(sessionId, content, {
@@ -67,6 +70,7 @@ async function consumeChatRun(runTask: Task, sessionId: string, content: string,
     for await (const event of stream) {
       if (event.type === 'done') {
         sawDone = true;
+        doneUsage = event.usage;
       }
       applyEvent(runTask.id, event);
       broadcastLive(runTask.id, event);
@@ -86,7 +90,7 @@ async function consumeChatRun(runTask: Task, sessionId: string, content: string,
 
     const finishedRun = getRunStatus(runTask.id);
     if (sawDone && finishedRun?.status === 'done') {
-      const updated = recordAgentResponse(runTask.id);
+      const updated = recordAgentResponse(runTask.id, Date.now(), doneUsage ?? null);
       if (updated) broadcast({ type: 'task_updated', task: updated });
     } else {
       touchTask(runTask.id);

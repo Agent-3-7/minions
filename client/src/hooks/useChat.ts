@@ -47,6 +47,20 @@ function findLastUsage(msgs: { role: string; usage?: UsageStats }[]): UsageStats
   }
 }
 
+function hydrateLastAssistantUsage(msgs: ChatMessage[], usage?: UsageStats | null): ChatMessage[] {
+  if (!usage) return msgs;
+
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i].role !== 'assistant') continue;
+    if (msgs[i].usage) return msgs;
+    const copy = msgs.slice();
+    copy[i] = { ...copy[i], usage: { ...usage } };
+    return copy;
+  }
+
+  return msgs;
+}
+
 function findLastAssistant(messages: LiveChatMessage[]): LiveChatMessage | undefined {
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i].role === 'assistant') return messages[i];
@@ -191,12 +205,11 @@ export function useChat() {
 
   const refreshCommittedMessages = useCallback(async (taskId: string, finishedRunId?: string) => {
     try {
-      const { messages: msgs } = await fetchMessages(taskId);
+      const { messages: msgs, usage: persistedUsage } = await fetchMessages(taskId);
       if (taskIdRef.current !== taskId) return;
 
-      committedMessagesRef.current = msgs as ChatMessage[];
-      const committedUsage = findLastUsage(committedMessagesRef.current);
-      if (!liveUsageRef.current && committedUsage) liveUsageRef.current = committedUsage;
+      committedMessagesRef.current = hydrateLastAssistantUsage(msgs as ChatMessage[], persistedUsage);
+      liveUsageRef.current = persistedUsage ?? findLastUsage(committedMessagesRef.current) ?? liveUsageRef.current;
 
       if (finishedRunId) {
         lastCommittedRunIdRef.current = finishedRunId;
@@ -284,9 +297,10 @@ export function useChat() {
     if (event.type === 'done') {
       if (event.sessionId) run.sessionId = event.sessionId;
       if (run.status !== 'error') run.status = 'done';
+      const assistant = ensureAssistant(run);
       if (event.usage) {
         run.usage = event.usage;
-        ensureAssistant(run).usage = event.usage;
+        assistant.usage = event.usage;
         liveUsageRef.current = event.usage;
       }
       run.updatedAt = Date.now();
@@ -342,11 +356,11 @@ export function useChat() {
     clearAllState();
     taskIdRef.current = taskId;
 
-    const { messages: msgs } = await fetchMessages(taskId);
+    const { messages: msgs, usage: persistedUsage } = await fetchMessages(taskId);
     if (taskIdRef.current !== taskId) return msgs;
 
-    committedMessagesRef.current = msgs as ChatMessage[];
-    liveUsageRef.current = findLastUsage(committedMessagesRef.current) ?? null;
+    committedMessagesRef.current = hydrateLastAssistantUsage(msgs as ChatMessage[], persistedUsage);
+    liveUsageRef.current = persistedUsage ?? findLastUsage(committedMessagesRef.current) ?? null;
     publishState();
     openLiveSubscription(taskId);
     return msgs;

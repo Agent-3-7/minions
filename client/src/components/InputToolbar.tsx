@@ -2,12 +2,7 @@ import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useR
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown, Search, Sparkles, Zap, type LucideIcon } from 'lucide-react';
 import { REASONING_EFFORTS, type AgentDefaults, type AgentModelGroup, type ReasoningEffort, type UsageStats } from '@shared/types';
-
-function formatTokenCount(n: number): string {
-  if (n < 1000) return `${n}`;
-  if (n < 100_000) return `${(n / 1000).toFixed(1)}K`;
-  return `${Math.round(n / 1000)}K`;
-}
+import { formatTokenCount } from '../lib/format';
 
 const MAX_CONTEXT = 128_000;
 
@@ -62,16 +57,18 @@ export function ContextRing({ usage }: { usage: UsageStats }) {
       </div>
 
       <div className="absolute bottom-full right-0 mb-2.5 z-50 opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity duration-150">
-        <div className="w-48 p-3 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 shadow-lg">
+        <div className="w-56 p-3 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 shadow-lg">
           <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 mb-1">
-            Context window
+            Last response
           </p>
           {exceeded && (
             <p className="text-xs text-red-500 mb-0.5">{pct}% used (exceeded)</p>
           )}
-          <p className="text-xs text-zinc-500 dark:text-zinc-400 tabular-nums">
-            {formatTokenCount(usage.input_tokens)} / {formatTokenCount(MAX_CONTEXT)} tokens used
-          </p>
+          <div className="space-y-0.5 text-xs text-zinc-500 dark:text-zinc-400 tabular-nums">
+            <p>Context: {formatTokenCount(usage.input_tokens)} / {formatTokenCount(MAX_CONTEXT)}</p>
+            <p>Output: {formatTokenCount(usage.output_tokens)}</p>
+            <p>Total: {formatTokenCount(usage.total_tokens)}</p>
+          </div>
         </div>
         <div className="absolute -bottom-[3px] right-[9px] w-1.5 h-1.5 bg-white dark:bg-zinc-800 border-r border-b border-zinc-200 dark:border-zinc-700 rotate-45" />
       </div>

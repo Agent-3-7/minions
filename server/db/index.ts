@@ -26,5 +26,8 @@ function ensureColumn(table: string, column: string, definition: string) {
 }
 
 ensureColumn('tasks', 'last_viewed_at', 'INTEGER');
+ensureColumn('tasks', 'last_usage_input_tokens', 'INTEGER');
+ensureColumn('tasks', 'last_usage_output_tokens', 'INTEGER');
+ensureColumn('tasks', 'last_usage_total_tokens', 'INTEGER');
 
 export default db;

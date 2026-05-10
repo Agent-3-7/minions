@@ -170,6 +170,10 @@ export function getRun(taskId: string): LiveChatRun | undefined {
   return run ? cloneRun(run) : undefined;
 }
 
+export function getRunUsage(taskId: string): LiveChatRun['usage'] | undefined {
+  return runs.get(taskId)?.usage;
+}
+
 export function getRunStatus(taskId: string): Pick<LiveChatRun, 'runId' | 'status'> | undefined {
   const run = runs.get(taskId);
   return run ? { runId: run.runId, status: run.status } : undefined;

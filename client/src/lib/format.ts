@@ -29,6 +29,12 @@ export function formatBytes(value: number | null): string {
   return `${size >= 10 ? size.toFixed(0) : size.toFixed(1)} ${units[unitIndex]}`;
 }
 
+export function formatTokenCount(n: number): string {
+  if (n < 1000) return `${n}`;
+  if (n < 100_000) return `${(n / 1000).toFixed(1)}K`;
+  return `${Math.round(n / 1000)}K`;
+}
+
 export function timeAgo(ms: number): string {
   const seconds = Math.floor((Date.now() - ms) / 1000);
   if (seconds < 60) return 'just now';
