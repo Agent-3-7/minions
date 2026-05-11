@@ -11,11 +11,12 @@ import { TaskCard } from './TaskCard';
 interface ColumnProps {
   status: TaskStatus;
   tasks: Task[];
+  streamingTaskIds: Set<string>;
   isLast?: boolean;
   onRequestDeleteAll: (status: TaskStatus) => void;
 }
 
-export function Column({ status, tasks, isLast = false, onRequestDeleteAll }: ColumnProps) {
+export function Column({ status, tasks, streamingTaskIds, isLast = false, onRequestDeleteAll }: ColumnProps) {
   const { label } = STATUS_META[status];
   const { setNodeRef, isOver } = useDroppable({ id: status });
   const navigate = useNavigate();
@@ -72,7 +73,7 @@ export function Column({ status, tasks, isLast = false, onRequestDeleteAll }: Co
         }`}
       >
         {tasks.map((task) => (
-          <TaskCard key={task.id} task={task} />
+          <TaskCard key={task.id} task={task} isStreaming={streamingTaskIds.has(task.id)} />
         ))}
         {showAddButton && (
           <div className="h-9 shrink-0">

@@ -114,6 +114,8 @@ async function consumeChatRun(runTask: Task, sessionId: string, content: string,
     }
 
     const finishedRun = getRunStatus(runTask.id);
+    if (finishedRun) broadcast({ type: 'task_run_updated', run: finishedRun });
+
     if (sawDone && finishedRun?.status === 'done') {
       const responseAt = Date.now();
       const updated = recordAgentResponse(runTask.id, responseAt, doneUsage ?? null);
@@ -167,6 +169,8 @@ chatRouter.post('/:id/messages', async (req, res) => {
   const sessionId = runTask.id;
 
   const run = startRun(runTask.id, sessionId, content);
+  const startedRun = getRunStatus(runTask.id);
+  if (startedRun) broadcast({ type: 'task_run_updated', run: startedRun });
   broadcastLive(runTask.id, { type: 'snapshot', run });
   void consumeChatRun(runTask, sessionId, content, run.runId);
 

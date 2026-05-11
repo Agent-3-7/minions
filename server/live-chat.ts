@@ -1,6 +1,6 @@
 import type { Response } from 'express';
 import { v4 as uuid } from 'uuid';
-import type { LiveChatRun, LiveChatMessage, ToolProgressEvent } from '../shared/types.js';
+import type { LiveChatRun, LiveChatMessage, TaskRunState, ToolProgressEvent } from '../shared/types.js';
 import type { StreamEvent } from './adapters/types.js';
 
 export type LiveChatEvent = StreamEvent | { type: 'snapshot'; run: LiveChatRun };
@@ -21,6 +21,16 @@ function cloneRun(run: LiveChatRun): LiveChatRun {
       usage: message.usage ? { ...message.usage } : undefined,
     })),
     usage: run.usage ? { ...run.usage } : undefined,
+  };
+}
+
+function runState(run: LiveChatRun): TaskRunState {
+  return {
+    taskId: run.taskId,
+    runId: run.runId,
+    status: run.status,
+    startedAt: run.startedAt,
+    updatedAt: run.updatedAt,
   };
 }
 
@@ -174,9 +184,13 @@ export function getRunUsage(taskId: string): LiveChatRun['usage'] | undefined {
   return runs.get(taskId)?.usage;
 }
 
-export function getRunStatus(taskId: string): Pick<LiveChatRun, 'runId' | 'status'> | undefined {
+export function getRunStatus(taskId: string): TaskRunState | undefined {
   const run = runs.get(taskId);
-  return run ? { runId: run.runId, status: run.status } : undefined;
+  return run ? runState(run) : undefined;
+}
+
+export function getRunStatuses(): TaskRunState[] {
+  return Array.from(runs.values()).map(runState);
 }
 
 export function subscribe(taskId: string, res: Response): void {

@@ -1,10 +1,7 @@
 import type { Response } from 'express';
-import type { Task } from '../shared/types.js';
+import type { BoardEvent } from '../shared/types.js';
 
-type BoardEvent =
-  | { type: 'task_created'; task: Task }
-  | { type: 'task_updated'; task: Task }
-  | { type: 'task_deleted'; taskId: string };
+export type { BoardEvent };
 
 const clients = new Set<Response>();
 
@@ -37,9 +34,21 @@ export function addClient(res: Response) {
   startKeepalive();
 }
 
-export function broadcast(event: BoardEvent) {
+function writeEvent(res: Response, event: BoardEvent): boolean {
   const data = `data: ${JSON.stringify(event)}\n\n`;
+  try {
+    return res.write(data);
+  } catch {
+    return false;
+  }
+}
+
+export function sendEvent(res: Response, event: BoardEvent): void {
+  writeEvent(res, event);
+}
+
+export function broadcast(event: BoardEvent) {
   for (const client of clients) {
-    try { client.write(data); } catch { clients.delete(client); }
+    if (!writeEvent(client, event)) clients.delete(client);
   }
 }

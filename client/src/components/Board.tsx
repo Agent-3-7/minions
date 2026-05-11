@@ -25,6 +25,7 @@ const dropAnimation = {
 
 export function Board() {
   const tasks = useStore((s) => s.tasks);
+  const streamingTaskIds = useStore((s) => s.streamingTaskIds);
   const upsertTask = useStore((s) => s.upsertTask);
   const removeTask = useStore((s) => s.removeTask);
   const grouped = useMemo(() => {
@@ -123,13 +124,19 @@ export function Board() {
             key={status}
             status={status}
             tasks={grouped[status]}
+            streamingTaskIds={streamingTaskIds}
             isLast={index === TASK_STATUSES.length - 1}
             onRequestDeleteAll={handleRequestDeleteAll}
           />
         ))}
       </div>
       <DragOverlay dropAnimation={dropAnimation}>
-        {activeTask && <TaskCardOverlay task={activeTask} />}
+        {activeTask && (
+          <TaskCardOverlay
+            task={activeTask}
+            isStreaming={streamingTaskIds.has(activeTask.id)}
+          />
+        )}
       </DragOverlay>
       {deleteAllStatus && (
         <DeleteConfirmModal

@@ -1,14 +1,19 @@
 import { useCallback, useState } from 'react';
 import { useDraggable } from '@dnd-kit/core';
-import { MoreHorizontal } from 'lucide-react';
+import { Loader2, MoreHorizontal } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { Task } from '@shared/types';
 import { timeAgo } from '../lib/format';
 import { hasUnseenAgentResponse } from '../lib/taskState';
 import { TaskContextMenu } from './TaskContextMenu';
 
-function TaskCardBody({ task }: { task: Task }) {
+function TaskCardBody({ task, isStreaming = false }: { task: Task; isStreaming?: boolean }) {
   const isUnseen = hasUnseenAgentResponse(task);
+  const timeRowClass = isStreaming
+    ? 'font-semibold text-zinc-600 dark:text-zinc-300'
+    : isUnseen
+      ? 'font-semibold text-zinc-700 dark:text-zinc-200'
+      : 'text-zinc-400 dark:text-zinc-500';
 
   return (
     <div>
@@ -31,22 +36,20 @@ function TaskCardBody({ task }: { task: Task }) {
         </p>
       )}
       <div
-        className={`mt-3 flex items-center gap-1.5 text-[11px] leading-none ${
-          isUnseen
-            ? 'font-semibold text-zinc-700 dark:text-zinc-200'
-            : 'text-zinc-400 dark:text-zinc-500'
-        }`}
+        className={`mt-3 flex items-center gap-1.5 text-[11px] leading-none ${timeRowClass}`}
       >
-        {isUnseen && (
+        {isStreaming ? (
+          <Loader2 size={12} className="shrink-0 animate-spin" strokeWidth={2.5} />
+        ) : isUnseen && (
           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-zinc-700 ring-4 ring-zinc-100 dark:bg-zinc-200 dark:ring-zinc-800" />
         )}
-        <span>{timeAgo(task.updated_at)}</span>
+        <span>{isStreaming ? 'Working...' : timeAgo(task.updated_at)}</span>
       </div>
     </div>
   );
 }
 
-export function TaskCard({ task }: { task: Task }) {
+export function TaskCard({ task, isStreaming = false }: { task: Task; isStreaming?: boolean }) {
   const {
     attributes,
     listeners,
@@ -98,7 +101,7 @@ export function TaskCard({ task }: { task: Task }) {
           {...listeners}
           className="block p-3.5 pr-8 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/60 dark:focus-visible:ring-zinc-500/70"
         >
-          <TaskCardBody task={task} />
+          <TaskCardBody task={task} isStreaming={isStreaming} />
         </Link>
         <button
           type="button"
@@ -126,10 +129,10 @@ export function TaskCard({ task }: { task: Task }) {
   );
 }
 
-export function TaskCardOverlay({ task }: { task: Task }) {
+export function TaskCardOverlay({ task, isStreaming = false }: { task: Task; isStreaming?: boolean }) {
   return (
     <div className="p-3.5 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-600 shadow-2xl rotate-[2deg] scale-105 w-[280px] pointer-events-none">
-      <TaskCardBody task={task} />
+      <TaskCardBody task={task} isStreaming={isStreaming} />
     </div>
   );
 }

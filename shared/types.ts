@@ -44,6 +44,21 @@ export interface ToolProgressEvent {
 
 export type LiveChatRunStatus = 'streaming' | 'done' | 'error';
 
+export interface TaskRunState {
+  taskId: string;
+  runId: string;
+  status: LiveChatRunStatus;
+  startedAt: number;
+  updatedAt: number;
+}
+
+export type BoardEvent =
+  | { type: 'task_created'; task: Task }
+  | { type: 'task_updated'; task: Task }
+  | { type: 'task_deleted'; taskId: string }
+  | { type: 'task_runs_snapshot'; runs: TaskRunState[] }
+  | { type: 'task_run_updated'; run: TaskRunState };
+
 export type LiveChatMessage = TaskMessage & { tools?: ToolProgressEvent[] };
 
 export interface LiveChatRun {
