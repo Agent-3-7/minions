@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { SquarePen, Columns3, Settings, PanelLeftClose, PanelLeft, CalendarClock, Sparkles, Folder } from 'lucide-react';
 import { useStore } from '../lib/store';
+import { isEditableTarget } from '../lib/keyboard';
 
 const isMac = /Mac/.test(navigator.userAgent);
 
@@ -16,9 +17,6 @@ export function Sidebar() {
     let chordTimeout: ReturnType<typeof setTimeout> | null = null;
 
     function handleKeyDown(e: KeyboardEvent) {
-      const target = e.target as HTMLElement;
-      const editable = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
-
       const mod = isMac ? e.metaKey : e.ctrlKey;
       if (mod && e.shiftKey && e.key.toLowerCase() === 'o') {
         e.preventDefault();
@@ -26,7 +24,7 @@ export function Sidebar() {
         return;
       }
 
-      if (editable || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      if (isEditableTarget(e) || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
 
       const key = e.key.toLowerCase();
 

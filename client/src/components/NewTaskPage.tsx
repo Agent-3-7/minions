@@ -4,6 +4,7 @@ import { ArrowUp, Loader2 } from 'lucide-react';
 import { InputToolbar } from './InputToolbar';
 import { createTask } from '../lib/api';
 import { useAgentConfig } from '../hooks/useAgentConfig';
+import { isEditableTarget, handleChatKeyDown } from '../lib/keyboard';
 
 export function NewTaskPage() {
   const navigate = useNavigate();
@@ -18,7 +19,7 @@ export function NewTaskPage() {
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') navigate('/');
+      if (e.key === 'Escape' && !isEditableTarget(e)) navigate('/');
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
@@ -42,12 +43,7 @@ export function NewTaskPage() {
   }, [defaults, input, isCreating, isLoading, model, navigate, reasoningEffort]);
 
   const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        handleSubmit();
-      }
-    },
+    (e: React.KeyboardEvent) => handleChatKeyDown(e, handleSubmit),
     [handleSubmit],
   );
 

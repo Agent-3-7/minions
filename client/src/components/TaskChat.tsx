@@ -4,6 +4,7 @@ import { InputToolbar, ContextRing } from './InputToolbar';
 import { MarkdownContent } from './MarkdownContent';
 import { useChat, ToolProgressEvent } from '../hooks/useChat';
 import { useAgentConfig } from '../hooks/useAgentConfig';
+import { handleChatKeyDown } from '../lib/keyboard';
 import type { AgentRunSettings } from '../lib/api';
 
 interface TaskChatProps {
@@ -154,12 +155,7 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
   }, [configPending, input, isStreaming, taskId, sendMessage, model, reasoningEffort]);
 
   const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        handleSubmit();
-      }
-    },
+    (e: React.KeyboardEvent) => handleChatKeyDown(e, handleSubmit),
     [handleSubmit],
   );
 

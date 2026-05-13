@@ -8,6 +8,7 @@ import { deleteTask, patchTask, moveTask, markTaskViewed } from '../lib/api';
 import { TASK_STATUSES } from '@shared/types';
 import { STATUS_META } from '../lib/constants';
 import { timeAgo } from '../lib/format';
+import { isEditableTarget } from '../lib/keyboard';
 import { TaskChat } from './TaskChat';
 import type { AgentRunSettings } from '../lib/api';
 import type { TaskStatus } from '@shared/types';
@@ -64,8 +65,7 @@ export function TaskDetailPage() {
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      const tag = (e.target as HTMLElement).tagName;
-      if (e.key === 'Escape' && tag !== 'TEXTAREA' && tag !== 'INPUT') navigate('/');
+      if (e.key === 'Escape' && !isEditableTarget(e)) navigate('/');
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
