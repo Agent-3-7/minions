@@ -15,9 +15,35 @@ import time
 import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
+
+# Alias so submodules importing `hermes_worker` see this module even when run as `__main__`.
+sys.modules.setdefault("hermes_worker", sys.modules[__name__])
+
+from hermes_worker_utils import (
+    WorkerError,
+    string_or_none,
+    truncate_with_ellipsis,
+)
+from hermes_sessions import (
+    load_agent_history,
+    open_session,
+    project_session_messages,
+    project_session_metadata,
+)
+from hermes_cron import (
+    get_cron_job,
+    get_cron_run_content,
+    list_cron_jobs,
+    list_cron_runs,
+    pause_cron_job,
+    remove_cron_job,
+    resume_cron_job,
+    start_cron_ticker,
+    tick_cron,
+    trigger_cron_job,
+)
 
 PROTOCOL_OUT = sys.stdout
 PROTOCOL_LOCK = threading.Lock()
@@ -60,8 +86,6 @@ _IMPORTS_LOCK = threading.Lock()
 _AIAgent: Any = None
 _AIAgent_PARAMS: set[str] = set()
 _SessionDB: Any = None
-_CRON_TICKER_STARTED = False
-_CRON_TICKER_LOCK = threading.Lock()
 _CONFIG_CACHE: dict[str, Any] | None = None
 _CONFIG_MTIME: float = 0.0
 _MODEL_EXECUTOR = ThreadPoolExecutor(max_workers=1)
@@ -80,13 +104,6 @@ class _ModelListCache:
 
 _MODEL_LIST_CACHE: _ModelListCache | None = None
 _MODEL_LIST_CACHE_LOCK = threading.Lock()
-
-
-class WorkerError(Exception):
-    def __init__(self, message: str, code: str = "worker_error", hint: str | None = None):
-        super().__init__(message)
-        self.code = code
-        self.hint = hint
 
 
 def _send(payload: dict[str, Any]) -> None:
@@ -328,26 +345,19 @@ def _defaults_from_config(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     display_cfg = cfg.get("display")
 
     return {
-        "provider": _string_or_none(model_cfg.get("provider")),
-        "model": _string_or_none(model_cfg.get("default")),
-        "baseUrl": _string_or_none(model_cfg.get("base_url")),
-        "apiMode": _string_or_none(model_cfg.get("api_mode")),
+        "provider": string_or_none(model_cfg.get("provider")),
+        "model": string_or_none(model_cfg.get("default")),
+        "baseUrl": string_or_none(model_cfg.get("base_url")),
+        "apiMode": string_or_none(model_cfg.get("api_mode")),
         "reasoningEffort": _default_reasoning(cfg),
         "showReasoning": bool(display_cfg.get("show_reasoning")) if isinstance(display_cfg, dict) and isinstance(display_cfg.get("show_reasoning"), bool) else True,
     }
 
 
-def _string_or_none(value: Any) -> str | None:
-    if isinstance(value, str):
-        stripped = value.strip()
-        return stripped or None
-    return None
-
-
 def _task_key_for(request: dict[str, Any]) -> str:
     return (
-        _string_or_none(request.get("taskId"))
-        or _string_or_none(request.get("sessionId"))
+        string_or_none(request.get("taskId"))
+        or string_or_none(request.get("sessionId"))
         or str(request.get("id"))
     )
 
@@ -524,8 +534,8 @@ def _list_authenticated_model_groups(
     for provider_info in providers:
         if not isinstance(provider_info, dict):
             continue
-        slug = _string_or_none(provider_info.get("slug"))
-        group_name = _string_or_none(provider_info.get("name")) or slug or "configured"
+        slug = string_or_none(provider_info.get("slug"))
+        group_name = string_or_none(provider_info.get("name")) or slug or "configured"
         is_user_defined = bool(provider_info.get("is_user_defined"))
         if not is_user_defined and slug and not _provider_hint_is_available(slug):
             continue
@@ -534,7 +544,7 @@ def _list_authenticated_model_groups(
         if not isinstance(models, list):
             continue
         for raw_model in models:
-            model_id = _string_or_none(raw_model)
+            model_id = string_or_none(raw_model)
             if not model_id:
                 continue
             option_id = model_id if is_user_defined else _model_option_id(slug, model_id, active_provider)
@@ -608,9 +618,9 @@ def _list_models() -> dict[str, Any]:
 def _resolve_model_provider(requested_model: str | None, cfg: dict[str, Any] | None = None) -> tuple[str, str | None, str | None]:
     cfg = cfg if cfg is not None else _load_config()
     model_cfg = _model_section(cfg)
-    config_provider = _string_or_none(model_cfg.get("provider"))
-    config_base_url = _string_or_none(model_cfg.get("base_url"))
-    default_model = _string_or_none(model_cfg.get("default"))
+    config_provider = string_or_none(model_cfg.get("provider"))
+    config_base_url = string_or_none(model_cfg.get("base_url"))
+    default_model = string_or_none(model_cfg.get("default"))
     model_id = (requested_model or default_model or "").strip()
 
     if not model_id:
@@ -623,7 +633,7 @@ def _resolve_model_provider(requested_model: str | None, cfg: dict[str, Any] | N
         if not name:
             continue
         if model_id in _custom_provider_models(entry):
-            return model_id, f"custom:{name.lower().replace(' ', '-')}", _string_or_none(entry.get("base_url"))
+            return model_id, f"custom:{name.lower().replace(' ', '-')}", string_or_none(entry.get("base_url"))
 
     parsed = _parse_provider_model(model_id)
     if parsed:
@@ -666,13 +676,13 @@ def _fallback_model(cfg: dict[str, Any]) -> dict[str, Any] | None:
     raw = cfg.get("fallback_model")
     if not isinstance(raw, dict):
         return None
-    model = _string_or_none(raw.get("model"))
+    model = string_or_none(raw.get("model"))
     if not model:
         return None
     return {
         "model": model,
-        "provider": _string_or_none(raw.get("provider")),
-        "base_url": _string_or_none(raw.get("base_url")),
+        "provider": string_or_none(raw.get("provider")),
+        "base_url": string_or_none(raw.get("base_url")),
     }
 
 
@@ -689,475 +699,6 @@ def _parse_reasoning(effort: str | None) -> dict[str, Any] | None:
         if effort in ALLOWED_REASONING:
             return {"enabled": True, "effort": effort}
     return None
-
-
-AGENT_HISTORY_KEYS = {
-    "role",
-    "content",
-    "tool_calls",
-    "tool_call_id",
-    "tool_name",
-    "finish_reason",
-    "reasoning",
-    "reasoning_content",
-    "reasoning_details",
-    "codex_reasoning_items",
-    "codex_message_items",
-}
-
-
-def _sanitize_agent_history(history: Any) -> list[dict[str, Any]]:
-    if not isinstance(history, list):
-        return []
-    safe: list[dict[str, Any]] = []
-    for item in history:
-        if not isinstance(item, dict):
-            continue
-        role = item.get("role")
-        if role not in {"user", "assistant", "system", "tool"}:
-            continue
-
-        safe_item = {
-            key: _json_safe(value)
-            for key, value in item.items()
-            if key in AGENT_HISTORY_KEYS and value is not None
-        }
-        if not safe_item.get("content") and not safe_item.get("tool_calls") and not safe_item.get("tool_call_id"):
-            continue
-        safe_item["role"] = role
-        safe.append(safe_item)
-    return safe
-
-
-def _json_safe(value: Any) -> Any:
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return value
-    if isinstance(value, dict):
-        return {str(key): _json_safe(val) for key, val in value.items()}
-    if isinstance(value, (list, tuple, set)):
-        return [_json_safe(item) for item in value]
-    return str(value)
-
-
-def _session_db_or_error() -> Any:
-    _ensure_imports()
-    if _SessionDB is None:
-        raise WorkerError(
-            "Hermes session database is unavailable.",
-            code="session_db_unavailable",
-        )
-    return _SessionDB()
-
-
-def _resolve_live_session_id(session_db: Any, session_id: str) -> str:
-    resolve = getattr(session_db, "resolve_resume_session_id", None)
-    if callable(resolve):
-        try:
-            return resolve(session_id) or session_id
-        except Exception:
-            return session_id
-    return session_id
-
-
-def _load_agent_history(session_db: Any, session_id: str) -> list[dict[str, Any]]:
-    if not session_id:
-        return []
-    try:
-        get_session = getattr(session_db, "get_session", None)
-        if callable(get_session) and not get_session(session_id):
-            return []
-        history = session_db.get_messages_as_conversation(session_id)
-    except Exception as exc:
-        raise WorkerError(f"Could not load Hermes session history: {exc}", code="session_load_error") from exc
-    return _sanitize_agent_history(history)
-
-
-def _content_to_text(content: Any) -> str:
-    if isinstance(content, str):
-        return content
-    if content is None:
-        return ""
-    if isinstance(content, list):
-        parts: list[str] = []
-        for item in content:
-            if isinstance(item, str):
-                if item:
-                    parts.append(item)
-                continue
-            if isinstance(item, dict):
-                text = item.get("text") or item.get("content")
-                if isinstance(text, str) and text:
-                    parts.append(text)
-                    continue
-                item_type = _string_or_none(item.get("type"))
-                if item_type:
-                    parts.append(f"[{item_type}]")
-        return "\n".join(parts) if parts else "[non-text content]"
-    if isinstance(content, dict):
-        text = content.get("text") or content.get("content")
-        if isinstance(text, str):
-            return text
-        return "[non-text content]"
-    return str(content)
-
-
-def _strip_minions_user_scaffold(content: str) -> str:
-    stripped = content.lstrip()
-    if stripped.startswith("[TASK AGENT]"):
-        marker = "[TASK DESCRIPTION]"
-        marker_index = stripped.find(marker)
-        if marker_index >= 0:
-            return stripped[marker_index + len(marker):].lstrip("\r\n ")
-
-    if stripped.startswith("<task_agent>"):
-        marker = "</task_agent>"
-        marker_index = stripped.find(marker)
-        if marker_index >= 0:
-            remainder = stripped[marker_index + len(marker):].lstrip()
-            if remainder.startswith("<task_description>"):
-                end_marker = "</task_description>"
-                end_index = remainder.find(end_marker)
-                if end_index >= 0:
-                    return remainder[len("<task_description>"):end_index].strip()
-            return remainder
-
-    return content
-
-
-def _timestamp_to_ms(timestamp: Any) -> int:
-    try:
-        value = float(timestamp)
-    except (TypeError, ValueError):
-        return int(time.time() * 1000)
-    if value < 10_000_000_000:
-        value *= 1000
-    return int(value)
-
-
-def _thinking_to_text(value: Any) -> str | None:
-    if value is None:
-        return None
-    if isinstance(value, str):
-        return value or None
-    try:
-        return json.dumps(value, ensure_ascii=False)
-    except Exception:
-        return str(value)
-
-
-def _project_session_messages(session_id: Any, task_id: Any = None) -> dict[str, Any]:
-    session_id = _string_or_none(session_id)
-    if not session_id:
-        raise WorkerError("Session ID is required.", code="bad_request")
-
-    session_db = _session_db_or_error()
-    live_session_id = _resolve_live_session_id(session_db, session_id)
-    try:
-        rows = session_db.get_messages(live_session_id)
-    except Exception as exc:
-        raise WorkerError(f"Could not load Hermes session messages: {exc}", code="session_load_error") from exc
-
-    projected: list[dict[str, Any]] = []
-    projected_task_id = _string_or_none(task_id) or session_id
-
-    for row in rows:
-        if not isinstance(row, dict):
-            row = dict(row)
-        role = row.get("role")
-        if role not in {"user", "assistant"}:
-            continue
-
-        content = _content_to_text(row.get("content"))
-        if role == "user":
-            content = _strip_minions_user_scaffold(content)
-        if role == "assistant" and not content.strip() and row.get("tool_calls"):
-            continue
-        if not content.strip():
-            continue
-
-        message = {
-            "id": f"hermes:{live_session_id}:{row.get('id')}",
-            "task_id": projected_task_id,
-            "role": role,
-            "content": content,
-            "created_at": _timestamp_to_ms(row.get("timestamp")),
-        }
-        if role == "assistant":
-            thinking = (
-                _thinking_to_text(row.get("reasoning_content"))
-                or _thinking_to_text(row.get("reasoning"))
-                or _thinking_to_text(row.get("reasoning_details"))
-                or _thinking_to_text(row.get("codex_reasoning_items"))
-            )
-            if thinking:
-                message["thinking"] = thinking
-        projected.append(message)
-
-    return {"messages": projected}
-
-
-def _int_field(row: dict[str, Any], key: str) -> int:
-    try:
-        return int(row.get(key) or 0)
-    except Exception:
-        return 0
-
-
-def _float_or_none(value: Any) -> float | None:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except Exception:
-        return None
-
-
-def _project_session_metadata(session_id: Any) -> dict[str, Any]:
-    session_id = _string_or_none(session_id)
-    if not session_id:
-        raise WorkerError("Session ID is required.", code="bad_request")
-
-    session_db = _session_db_or_error()
-    live_session_id = _resolve_live_session_id(session_db, session_id)
-    try:
-        row = session_db.get_session(live_session_id)
-    except Exception as exc:
-        raise WorkerError(f"Could not load Hermes session metadata: {exc}", code="session_load_error") from exc
-
-    if not row:
-        return {"session": None}
-
-    return {
-        "session": {
-            "id": str(row.get("id") or live_session_id),
-            "input_tokens": _int_field(row, "input_tokens"),
-            "output_tokens": _int_field(row, "output_tokens"),
-            "cache_read_tokens": _int_field(row, "cache_read_tokens"),
-            "cache_write_tokens": _int_field(row, "cache_write_tokens"),
-            "reasoning_tokens": _int_field(row, "reasoning_tokens"),
-            "estimated_cost_usd": _float_or_none(row.get("estimated_cost_usd")),
-            "cost_status": _string_or_none(row.get("cost_status")) or "unknown",
-            "model": _string_or_none(row.get("model")),
-        }
-    }
-
-
-def _normalize_cron_job(job: dict[str, Any] | None) -> dict[str, Any] | None:
-    if not isinstance(job, dict):
-        return None
-
-    job_id = _string_or_none(job.get("id")) or ""
-    raw_schedule = job.get("schedule")
-    raw_origin = job.get("origin")
-    raw_skills = job.get("skills")
-    if raw_skills is None and job.get("skill"):
-        raw_skills = [job.get("skill")]
-
-    return {
-        "id": job_id,
-        "name": _string_or_none(job.get("name")) or job_id,
-        "prompt": _string_or_none(job.get("prompt")),
-        "schedule": _json_safe(raw_schedule) if isinstance(raw_schedule, dict) else None,
-        "scheduleDisplay": _string_or_none(job.get("schedule_display")),
-        "enabled": bool(job.get("enabled", True)),
-        "state": _string_or_none(job.get("state")),
-        "nextRunAt": _string_or_none(job.get("next_run_at")),
-        "lastRunAt": _string_or_none(job.get("last_run_at")),
-        "lastStatus": _string_or_none(job.get("last_status")),
-        "lastError": _string_or_none(job.get("last_error")),
-        "lastDeliveryError": _string_or_none(job.get("last_delivery_error")),
-        "model": _string_or_none(job.get("model")),
-        "provider": _string_or_none(job.get("provider")),
-        "baseUrl": _string_or_none(job.get("base_url")),
-        "deliver": _string_or_none(job.get("deliver")),
-        "origin": _json_safe(raw_origin) if isinstance(raw_origin, dict) else None,
-        "skills": [str(item) for item in raw_skills] if isinstance(raw_skills, list) else [],
-        "createdAt": _string_or_none(job.get("created_at")),
-    }
-
-
-def _validate_cron_job_id(job_id: Any) -> str:
-    value = _string_or_none(job_id)
-    if not value:
-        raise WorkerError("Cron job ID is required.", code="bad_request")
-    if "/" in value or "\\" in value or ".." in value:
-        raise WorkerError("Invalid cron job ID.", code="bad_request")
-    return value
-
-
-def _list_cron_jobs(include_disabled: bool = False) -> dict[str, Any]:
-    _ensure_imports()
-    from cron.jobs import list_jobs
-
-    jobs = [_normalize_cron_job(job) for job in list_jobs(include_disabled=include_disabled)]
-    return {"jobs": [job for job in jobs if job is not None]}
-
-
-def _get_cron_job(job_id: Any) -> dict[str, Any]:
-    _ensure_imports()
-    from cron.jobs import get_job
-
-    job = _normalize_cron_job(get_job(_validate_cron_job_id(job_id)))
-    return {"job": job}
-
-
-def _pause_cron_job(job_id: Any, reason: Any = None) -> dict[str, Any]:
-    _ensure_imports()
-    from cron.jobs import pause_job
-
-    raw_reason = _string_or_none(reason)
-    job = _normalize_cron_job(pause_job(_validate_cron_job_id(job_id), reason=raw_reason))
-    return {"job": job}
-
-
-def _resume_cron_job(job_id: Any) -> dict[str, Any]:
-    _ensure_imports()
-    from cron.jobs import resume_job
-
-    job = _normalize_cron_job(resume_job(_validate_cron_job_id(job_id)))
-    return {"job": job}
-
-
-def _trigger_cron_job(job_id: Any) -> dict[str, Any]:
-    _ensure_imports()
-    from cron.jobs import trigger_job
-
-    job = _normalize_cron_job(trigger_job(_validate_cron_job_id(job_id)))
-    return {"job": job}
-
-
-def _remove_cron_job(job_id: Any) -> dict[str, Any]:
-    _ensure_imports()
-    from cron.jobs import remove_job
-
-    removed = bool(remove_job(_validate_cron_job_id(job_id)))
-    return {"ok": removed}
-
-
-def _truncate_with_ellipsis(text: str, max_chars: int) -> str:
-    if len(text) <= max_chars:
-        return text
-    return text[: max_chars - 3].rstrip() + "..."
-
-
-def _run_preview(content: str, max_chars: int = 420) -> str:
-    lines = [line.strip() for line in content.splitlines() if line.strip()]
-    return _truncate_with_ellipsis("\n".join(lines[:6]), max_chars)
-
-
-def _run_timestamp_from_stem(stem: str) -> str | None:
-    try:
-        return datetime.strptime(stem, "%Y-%m-%d_%H-%M-%S").isoformat()
-    except ValueError:
-        return None
-
-
-def _cron_run_status(content: str) -> str:
-    first_line = next((line.strip() for line in content.splitlines() if line.strip()), "")
-    if first_line.startswith("# Cron Job:") and "(FAILED)" in first_line:
-        return "error"
-    if first_line.startswith("# Cron Job:"):
-        return "ok"
-    return "unknown"
-
-
-def _read_run_head(path: Path, max_bytes: int = 2048) -> str:
-    try:
-        with open(path, "r", encoding="utf-8", errors="replace") as f:
-            return f.read(max_bytes)
-    except OSError:
-        return ""
-
-
-def _list_cron_runs(job_id: Any, limit: Any = 20) -> dict[str, Any]:
-    _ensure_imports()
-    from cron.jobs import OUTPUT_DIR
-
-    cron_job_id = _validate_cron_job_id(job_id)
-    try:
-        parsed_limit = int(limit)
-    except (TypeError, ValueError):
-        parsed_limit = 20
-    parsed_limit = max(1, min(parsed_limit, 100))
-
-    output_dir = Path(OUTPUT_DIR) / cron_job_id
-    if not output_dir.exists():
-        return {"runs": []}
-
-    entries = []
-    for path in output_dir.glob("*.md"):
-        try:
-            st = path.stat()
-        except OSError:
-            continue
-        if not st.st_mode & 0o100000:
-            continue
-        entries.append((st.st_mtime, path))
-    entries.sort(key=lambda entry: (entry[0], entry[1].name), reverse=True)
-    files = [path for _, path in entries]
-
-    runs: list[dict[str, Any]] = []
-    for path in files[:parsed_limit]:
-        head = _read_run_head(path)
-        runs.append({
-            "id": path.stem,
-            "jobId": cron_job_id,
-            "ranAt": _run_timestamp_from_stem(path.stem),
-            "path": str(path),
-            "status": _cron_run_status(head),
-            "preview": _run_preview(head),
-        })
-
-    return {"runs": runs}
-
-
-def _get_cron_run_content(job_id: Any, run_id: Any) -> dict[str, Any]:
-    _ensure_imports()
-    from cron.jobs import OUTPUT_DIR
-
-    cron_job_id = _validate_cron_job_id(job_id)
-    raw_run_id = _string_or_none(run_id)
-    if not raw_run_id or "/" in raw_run_id or "\\" in raw_run_id or ".." in raw_run_id:
-        raise WorkerError("Run ID is required.", code="bad_request")
-
-    path = Path(OUTPUT_DIR) / cron_job_id / f"{raw_run_id}.md"
-    if not path.is_file():
-        raise WorkerError("Cron run output not found.", code="not_found")
-
-    try:
-        content = path.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        content = path.read_text(encoding="utf-8", errors="replace")
-
-    return {"content": content}
-
-
-def _tick_cron() -> int:
-    _ensure_imports()
-    from cron.scheduler import tick
-
-    return int(tick(verbose=False) or 0)
-
-
-def _cron_ticker_loop() -> None:
-    while True:
-        try:
-            executed = _tick_cron()
-            if executed:
-                print(f"[hermes-worker] cron tick executed {executed} job(s)", file=sys.stderr, flush=True)
-        except Exception as exc:
-            print(f"[hermes-worker] cron tick failed: {exc}", file=sys.stderr, flush=True)
-        time.sleep(60)
-
-
-def _start_cron_ticker() -> None:
-    global _CRON_TICKER_STARTED
-    with _CRON_TICKER_LOCK:
-        if _CRON_TICKER_STARTED:
-            return
-        thread = threading.Thread(target=_cron_ticker_loop, name="hermes-cron-ticker", daemon=True)
-        thread.start()
-        _CRON_TICKER_STARTED = True
 
 
 def _create_agent(
@@ -1186,9 +727,9 @@ def _create_agent(
         raise WorkerError(str(exc), code=err.get("code", "worker_error"), hint=err.get("hint")) from exc
 
     if not resolved_provider:
-        resolved_provider = _string_or_none(runtime.get("provider"))
+        resolved_provider = string_or_none(runtime.get("provider"))
     if not resolved_base_url:
-        resolved_base_url = _string_or_none(runtime.get("base_url"))
+        resolved_base_url = string_or_none(runtime.get("base_url"))
 
     def clarify_callback(question: Any, choices: Any = None) -> str:
         return (
@@ -1251,7 +792,7 @@ def _create_agent(
 def _sync_session_identity(agent: Any, session_id: str) -> None:
     """Refresh persisted Hermes session metadata when Minions switches models."""
     session_db = getattr(agent, "_session_db", None)
-    model = _string_or_none(getattr(agent, "model", None))
+    model = string_or_none(getattr(agent, "model", None))
     if not session_db or not session_id or not model:
         return
 
@@ -1263,7 +804,7 @@ def _sync_session_identity(agent: Any, session_id: str) -> None:
         return
 
     model_config = getattr(agent, "_session_init_model_config", None)
-    stored_model = _string_or_none(session_row.get("model"))
+    stored_model = string_or_none(session_row.get("model"))
     if stored_model == model:
         return
 
@@ -1314,17 +855,16 @@ def _warm_agent() -> None:
 
 def _run_chat(request_id: str, request: dict[str, Any]) -> None:
     settings = request.get("settings") if isinstance(request.get("settings"), dict) else {}
-    requested_model = _string_or_none(settings.get("model"))
+    requested_model = string_or_none(settings.get("model"))
     requested_effort = _normalize_reasoning(settings.get("reasoningEffort"))
 
-    session_id = _string_or_none(request.get("sessionId")) or request_id
+    session_id = string_or_none(request.get("sessionId")) or request_id
     message = request.get("message")
     if not isinstance(message, str) or not message.strip():
         raise WorkerError("Chat request message is required.", code="bad_request")
 
-    session_db = _session_db_or_error()
-    session_id = _resolve_live_session_id(session_db, session_id)
-    history = _load_agent_history(session_db, session_id)
+    session_db, session_id = open_session(session_id)
+    history = load_agent_history(session_db, session_id)
     system_message = request.get("systemMessage")
     if not isinstance(system_message, str):
         system_message = None
@@ -1396,8 +936,8 @@ def _run_chat(request_id: str, request: dict[str, Any]) -> None:
         },
     )
     _sync_session_identity(agent, session_id)
-    task_id = _string_or_none(request.get("taskId")) or session_id
-    task_title = _string_or_none(request.get("taskTitle")) or task_id
+    task_id = string_or_none(request.get("taskId")) or session_id
+    task_title = string_or_none(request.get("taskTitle")) or task_id
     session_tokens = None
     clear_session_vars = None
     try:
@@ -1460,7 +1000,7 @@ def _run_chat_thread(request_id: str, request: dict[str, Any], task_key: str) ->
             _send({
                 "id": request_id,
                 "type": "done",
-                "sessionId": _string_or_none(request.get("sessionId")) or request_id,
+                "sessionId": string_or_none(request.get("sessionId")) or request_id,
             })
         if acquired:
             AGENT_SEMAPHORE.release()
@@ -1510,14 +1050,14 @@ def _submit_background_agent_request(
 
 def _judge_completion(request: dict[str, Any]) -> dict[str, Any]:
     """Evaluate whether the agent's response indicates task completion."""
-    task_title = _string_or_none(request.get("taskTitle")) or ""
-    task_description = _string_or_none(request.get("taskDescription")) or ""
-    response_text = _string_or_none(request.get("responseText")) or ""
+    task_title = string_or_none(request.get("taskTitle")) or ""
+    task_description = string_or_none(request.get("taskDescription")) or ""
+    response_text = string_or_none(request.get("responseText")) or ""
 
     if not response_text:
         return {"done": False, "reason": "empty response"}
 
-    response_text = _truncate_with_ellipsis(response_text, 4000)
+    response_text = truncate_with_ellipsis(response_text, 4000)
 
     task_context = task_title
     if task_description:
@@ -1562,16 +1102,16 @@ def _clean_generated_title(raw: str) -> str:
     while len(title) >= 2 and title[0] in {'"', "'", "`"} and title[-1] == title[0]:
         title = title[1:-1].strip()
     title = title.rstrip(".!?,;:")
-    return _truncate_with_ellipsis(title, 60)
+    return truncate_with_ellipsis(title, 60)
 
 
 def _generate_title(request: dict[str, Any]) -> dict[str, Any]:
     """Generate a short descriptive title for a task from its initial message."""
-    description = _string_or_none(request.get("description")) or ""
+    description = string_or_none(request.get("description")) or ""
     if not description:
         return {"title": ""}
 
-    description = _truncate_with_ellipsis(description, 2000)
+    description = truncate_with_ellipsis(description, 2000)
 
     title_system = (
         "You generate short, descriptive titles for tasks. "
@@ -1601,7 +1141,7 @@ def _submit_chat_request(request_id: str, request: dict[str, Any]) -> None:
         _send({
             "id": request_id,
             "type": "done",
-            "sessionId": _string_or_none(request.get("sessionId")) or request_id,
+            "sessionId": string_or_none(request.get("sessionId")) or request_id,
         })
         return
 
@@ -1635,27 +1175,27 @@ def _handle_request(request: dict[str, Any]) -> None:
         elif request_type == "models.list":
             _result(request_id, _list_models())
         elif request_type == "cron.jobs.list":
-            _result(request_id, _list_cron_jobs(bool(request.get("includeDisabled"))))
+            _result(request_id, list_cron_jobs(bool(request.get("includeDisabled"))))
         elif request_type == "cron.jobs.get":
-            _result(request_id, _get_cron_job(request.get("jobId")))
+            _result(request_id, get_cron_job(request.get("jobId")))
         elif request_type == "cron.jobs.runs":
-            _result(request_id, _list_cron_runs(request.get("jobId"), request.get("limit", 20)))
+            _result(request_id, list_cron_runs(request.get("jobId"), request.get("limit", 20)))
         elif request_type == "cron.jobs.run.content":
-            _result(request_id, _get_cron_run_content(request.get("jobId"), request.get("runId")))
+            _result(request_id, get_cron_run_content(request.get("jobId"), request.get("runId")))
         elif request_type == "cron.jobs.pause":
-            _result(request_id, _pause_cron_job(request.get("jobId"), request.get("reason")))
+            _result(request_id, pause_cron_job(request.get("jobId"), request.get("reason")))
         elif request_type == "cron.jobs.resume":
-            _result(request_id, _resume_cron_job(request.get("jobId")))
+            _result(request_id, resume_cron_job(request.get("jobId")))
         elif request_type == "cron.jobs.run":
-            _result(request_id, _trigger_cron_job(request.get("jobId")))
+            _result(request_id, trigger_cron_job(request.get("jobId")))
         elif request_type == "cron.jobs.remove":
-            _result(request_id, _remove_cron_job(request.get("jobId")))
+            _result(request_id, remove_cron_job(request.get("jobId")))
         elif request_type == "cron.tick":
-            _result(request_id, {"executed": _tick_cron()})
+            _result(request_id, {"executed": tick_cron()})
         elif request_type == "session.messages.get":
-            _result(request_id, _project_session_messages(request.get("sessionId"), request.get("taskId")))
+            _result(request_id, project_session_messages(request.get("sessionId"), request.get("taskId")))
         elif request_type == "session.get":
-            _result(request_id, _project_session_metadata(request.get("sessionId")))
+            _result(request_id, project_session_metadata(request.get("sessionId")))
         elif request_type == "chat":
             _submit_chat_request(request_id, request)
         elif request_type == "judge.completion":
@@ -1670,7 +1210,7 @@ def _handle_request(request: dict[str, Any]) -> None:
             _send({
                 "id": request_id,
                 "type": "done",
-                "sessionId": _string_or_none(request.get("sessionId")) or request_id,
+                "sessionId": string_or_none(request.get("sessionId")) or request_id,
             })
 
 
@@ -1718,7 +1258,7 @@ def main() -> int:
         return _self_test()
 
     sys.stdout = sys.stderr
-    _start_cron_ticker()
+    start_cron_ticker()
     try:
         _run_loop()
     except KeyboardInterrupt:
