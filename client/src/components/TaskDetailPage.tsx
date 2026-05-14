@@ -134,22 +134,14 @@ export function TaskDetailPage() {
   }
 
   const statusMeta = STATUS_META[task.status];
-  const titleMeasureText =
-    (titleAnimation.isAnimating ? task.title : titleDraft) || 'Name this task';
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
       <div className={`${DETAIL_COLUMN_CLASS} px-4 sm:px-6 pt-7 pb-2`}>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 flex-1">
-            <div className="-ml-2 inline-flex max-w-full items-center gap-1 rounded-md px-2 py-1 transition-colors hover:bg-zinc-100/80 focus-within:bg-white focus-within:ring-1 focus-within:ring-zinc-200 dark:hover:bg-zinc-800/80 dark:focus-within:bg-zinc-900 dark:focus-within:ring-zinc-700">
-              <div className="rename-title-shell relative min-w-[8ch] max-w-[calc(100%-1.75rem)] shrink overflow-hidden text-zinc-900 dark:text-zinc-100">
-                <span
-                  aria-hidden="true"
-                  className="invisible block whitespace-pre text-xl font-semibold leading-8"
-                >
-                  {titleMeasureText}
-                </span>
+            <div className="-ml-2 relative w-full rounded-md px-2 py-1 pr-10 transition-colors hover:bg-zinc-100/80 focus-within:bg-white focus-within:ring-1 focus-within:ring-zinc-200 dark:hover:bg-zinc-800/80 dark:focus-within:bg-zinc-900 dark:focus-within:ring-zinc-700">
+              <div className="rename-title-shell">
                 <input
                   ref={titleInputRef}
                   value={titleDraft}
@@ -169,13 +161,13 @@ export function TaskDetailPage() {
                   }}
                   aria-label="Task title"
                   placeholder="Name this task"
-                  className={`absolute inset-0 h-full w-full cursor-text bg-transparent px-0 py-0 text-xl font-semibold leading-8 outline-none placeholder:text-zinc-400 dark:placeholder:text-zinc-500 ${
+                  className={`block w-full cursor-text truncate bg-transparent p-0 text-xl font-semibold leading-8 text-zinc-900 outline-none placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500 ${
                     titleAnimation.isAnimating ? 'rename-title-input-hidden' : ''
                   }`}
                 />
                 <RenameReveal
                   animation={titleAnimation}
-                  className="text-xl font-semibold leading-8"
+                  className="text-xl font-semibold leading-8 text-zinc-900 dark:text-zinc-100"
                 />
               </div>
               <button
@@ -187,7 +179,7 @@ export function TaskDetailPage() {
                   titleInputRef.current?.focus();
                   titleInputRef.current?.select();
                 }}
-                className="shrink-0 rounded-md p-1 text-zinc-400 transition-colors hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-zinc-400 transition-colors hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
               >
                 <Pencil size={15} />
               </button>

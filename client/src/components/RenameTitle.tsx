@@ -6,7 +6,7 @@ export interface RenameAnimation {
 }
 
 function durationMsFor(charCount: number) {
-  return Math.min(2600, Math.max(1100, 260 + charCount * 62));
+  return Math.min(1900, Math.max(800, 200 + charCount * 45));
 }
 
 function prefersReducedMotion() {
@@ -25,7 +25,7 @@ export function useRenameAnimation(value: string, identity?: string | null): Ren
     const sameIdentity = previous && previous.identity === identity;
     const valueChanged = previous && previous.value !== value;
 
-    if (sameIdentity && valueChanged && !prefersReducedMotion()) {
+    if (sameIdentity && valueChanged && value.length > 0 && !prefersReducedMotion()) {
       setState({ isAnimating: true, typedValue: '' });
     } else {
       setState((current) => (
@@ -38,11 +38,6 @@ export function useRenameAnimation(value: string, identity?: string | null): Ren
     if (!state.isAnimating) return;
 
     const characters = Array.from(value);
-    if (characters.length === 0) {
-      setState({ isAnimating: false, typedValue: value });
-      return;
-    }
-
     const durationMs = durationMsFor(characters.length);
     let frame = 0;
     let lastCount = -1;
@@ -82,10 +77,8 @@ export function RenameReveal({
 
   return (
     <span aria-hidden="true" className={`rename-title-reveal ${className}`}>
-      <span className="rename-title-typed">
-        {animation.typedValue}
-        <span className="rename-title-caret" />
-      </span>
+      {animation.typedValue}
+      <span className="rename-title-caret" />
     </span>
   );
 }

@@ -45,11 +45,6 @@
     pointer-events: none;
     position: absolute;
     inset: 0;
-  }
-
-  .rename-title-typed {
-    position: absolute;
-    inset: 0;
     overflow: hidden;
     white-space: inherit;
     text-overflow: inherit;
