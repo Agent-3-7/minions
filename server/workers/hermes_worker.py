@@ -66,19 +66,49 @@ KNOWN_PROVIDER_PREFIXES = {
     "kimi",
     "kimi-coding",
     "minimax",
+    "minimax-cn",
     "mistral",
     "mistralai",
     "moonshotai",
     "nous",
+    "nvidia",
     "ollama",
     "ollama-cloud",
+    "opencode-go",
+    "opencode-zen",
     "openrouter",
     "qwen",
     "x-ai",
     "xai",
+    "xiaomi",
     "z-ai",
     "zai",
 }
+PORTAL_PROVIDERS = {"nous", "opencode-zen", "opencode-go", "nvidia"}
+LOCAL_SERVER_PROVIDERS = {
+    "lmstudio",
+    "lm-studio",
+    "ollama",
+    "llamacpp",
+    "llama-cpp",
+    "vllm",
+    "tabby",
+    "tabbyapi",
+    "koboldcpp",
+    "textgen",
+    "localai",
+}
+CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
+RUNTIME_MANAGED_PROVIDER_PREFIXES = {
+    "copilot",
+    "copilot-acp",
+    "google-gemini-cli",
+    "minimax-oauth",
+    "nous",
+    "openai-codex",
+    "qwen-oauth",
+}
+MODEL_RUNTIME_OVERRIDE_KEYS = ("base_url", "api_key", "api", "api_mode")
 
 _AGENT_DIR: Path | None = None
 _IMPORTS_READY = False
@@ -315,15 +345,23 @@ def _set_defaults(request: dict[str, Any]) -> dict[str, Any]:
         if isinstance(raw_model, str) and raw_model.strip():
             model_val = raw_model.strip()
             parsed = _parse_provider_model(model_val)
+            previous_provider = string_or_none(cfg["model"].get("provider"))
             if parsed:
                 provider_hint, bare_model = parsed
                 if provider_hint and not _provider_hint_is_available(provider_hint):
                     _raise_invalid_provider(provider_hint)
                 cfg["model"]["default"] = bare_model
                 cfg["model"]["provider"] = provider_hint
+                if (
+                    provider_hint != previous_provider
+                    or provider_hint in RUNTIME_MANAGED_PROVIDER_PREFIXES
+                ):
+                    _clear_model_runtime_overrides(cfg["model"])
             else:
                 cfg["model"]["default"] = model_val
                 cfg["model"].pop("provider", None)
+                if previous_provider and not previous_provider.startswith("custom"):
+                    _clear_model_runtime_overrides(cfg["model"])
 
     if "reasoningEffort" in request:
         normalized = _normalize_reasoning(request["reasoningEffort"])
@@ -337,6 +375,11 @@ def _set_defaults(request: dict[str, Any]) -> dict[str, Any]:
     _clear_model_list_cache()
 
     return _defaults_from_config(cfg)
+
+
+def _clear_model_runtime_overrides(model_cfg: dict[str, Any]) -> None:
+    for key in MODEL_RUNTIME_OVERRIDE_KEYS:
+        model_cfg.pop(key, None)
 
 
 def _defaults_from_config(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -411,9 +454,37 @@ def _custom_provider_models(entry: dict[str, Any]) -> list[str]:
 
 def _parse_provider_model(raw: str) -> tuple[str, str] | None:
     if raw.startswith("@") and ":" in raw:
-        provider, model = raw[1:].split(":", 1)
+        inner = raw[1:]
+        provider, model = inner.rsplit(":", 1)
+        if provider.startswith("custom:") and provider.count(":") >= 2:
+            slug_rest = provider[len("custom:"):]
+            if not _custom_slug_rest_looks_like_host_port(slug_rest):
+                provider, extra = provider.rsplit(":", 1)
+                model = f"{extra}:{model}"
+        elif provider not in KNOWN_PROVIDER_PREFIXES and not provider.startswith("custom:"):
+            provider, model = inner.split(":", 1)
         return provider, model
     return None
+
+
+def _custom_slug_rest_looks_like_host_port(rest: str) -> bool:
+    rest = str(rest or "").strip()
+    if ":" not in rest:
+        return False
+    host, port_s = rest.rsplit(":", 1)
+    if not host or ":" in host or not port_s.isdigit():
+        return False
+    if not (1 <= int(port_s) <= 65535):
+        return False
+    try:
+        import ipaddress
+
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        pass
+    host_l = host.lower()
+    return host_l == "localhost" or "." in host
 
 
 def _provider_hint_is_available(provider: str) -> bool:
@@ -493,6 +564,36 @@ def _groups_have_model(groups: dict[str, list[dict[str, Any]]], model_id: str) -
         for models in groups.values()
         for item in models
     )
+
+
+def _is_local_server_provider(provider: str | None) -> bool:
+    provider_l = str(provider or "").strip().lower()
+    if provider_l in LOCAL_SERVER_PROVIDERS:
+        return True
+    if provider_l.startswith("custom:"):
+        return provider_l.removeprefix("custom:") in LOCAL_SERVER_PROVIDERS
+    return False
+
+
+def _base_url_points_at_local_server(base_url: str | None) -> bool:
+    if not base_url:
+        return False
+    try:
+        import ipaddress
+        from urllib.parse import urlparse
+
+        host = (urlparse(base_url).hostname or "").lower()
+        if host in {"localhost", "ip6-localhost", "ip6-loopback"}:
+            return True
+        if not host:
+            return False
+        try:
+            addr = ipaddress.ip_address(host)
+        except ValueError:
+            return False
+        return addr.is_loopback or addr.is_private or addr.is_link_local
+    except Exception:
+        return False
 
 
 def _model_option_id(provider: str | None, model_id: str, active_provider: str | None) -> str:
@@ -620,6 +721,7 @@ def _resolve_model_provider(requested_model: str | None, cfg: dict[str, Any] | N
     model_cfg = _model_section(cfg)
     config_provider = string_or_none(model_cfg.get("provider"))
     config_base_url = string_or_none(model_cfg.get("base_url"))
+    config_provider_l = (config_provider or "").lower()
     default_model = string_or_none(model_cfg.get("default"))
     model_id = (requested_model or default_model or "").strip()
 
@@ -643,17 +745,26 @@ def _resolve_model_provider(requested_model: str | None, cfg: dict[str, Any] | N
     if "/" in model_id:
         prefix, bare = model_id.split("/", 1)
         prefix_normalized = prefix.lower()
-        if config_provider == "openrouter":
+        if config_provider_l == "openrouter":
             return model_id, "openrouter", config_base_url
-        if config_provider and prefix_normalized == config_provider:
-            return bare, config_provider, config_base_url
-        if config_provider in {"nous", "opencode-zen", "opencode-go"}:
+        if config_provider_l in PORTAL_PROVIDERS:
             return model_id, config_provider, config_base_url
+        if config_provider and prefix_normalized == config_provider_l:
+            return bare, config_provider, config_base_url
+        if (
+            config_provider_l == "openai-codex"
+            and (config_base_url or "").rstrip("/") == CODEX_BASE_URL
+            and prefix_normalized in KNOWN_PROVIDER_PREFIXES
+            and prefix_normalized != config_provider_l
+        ):
+            return model_id, "openrouter", None
         if config_base_url:
+            if _is_local_server_provider(config_provider) or _base_url_points_at_local_server(config_base_url):
+                return model_id, config_provider, config_base_url
             if prefix_normalized in KNOWN_PROVIDER_PREFIXES:
                 return bare, config_provider, config_base_url
             return model_id, config_provider, config_base_url
-        if prefix_normalized in KNOWN_PROVIDER_PREFIXES and prefix_normalized != config_provider:
+        if prefix_normalized in KNOWN_PROVIDER_PREFIXES and prefix_normalized != config_provider_l:
             return model_id, "openrouter", None
 
     return model_id, config_provider, config_base_url
