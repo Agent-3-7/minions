@@ -1,6 +1,6 @@
 {
   "name": "minionsai",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Mission Control for Hermes Agent — a Kanban board for autonomous agent tasks",
   "license": "MIT",
   "type": "module",
