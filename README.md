@@ -23,6 +23,15 @@ Open [http://localhost:6969](http://localhost:6969).
 
 Local sqllite db is created on first run and state lives in `~/.minions/`
 
+Check the installed version:
+
+```bash
+minions --version
+npm view minionsai version
+```
+
+The Settings page also shows the version of the running Minions server.
+
 ## Features
 
 - **Kanban board**: see every task at a glance: in progress, in review, done

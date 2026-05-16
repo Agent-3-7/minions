@@ -4,6 +4,11 @@ export type TaskStatus = (typeof TASK_STATUSES)[number];
 export const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const;
 export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
 
+export interface AppVersion {
+  name: string;
+  version: string;
+}
+
 export interface AgentRunSettings {
   model?: string | null;
   reasoningEffort?: ReasoningEffort | null;

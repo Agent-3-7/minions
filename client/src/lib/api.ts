@@ -2,6 +2,7 @@ import type {
   AgentDefaults,
   AgentModelsResponse,
   AgentRunSettings,
+  AppVersion,
   FileCreateResponse,
   FileCreateType,
   FileDeleteResponse,
@@ -119,6 +120,10 @@ export function fetchSession(taskId: string) {
 
 export function fetchHealth() {
   return request<{ ok: boolean; hermes: boolean }>('/health');
+}
+
+export function fetchAppVersion() {
+  return request<AppVersion>('/version');
 }
 
 export function fetchAgentDefaults() {
