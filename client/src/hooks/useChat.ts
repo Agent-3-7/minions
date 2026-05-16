@@ -31,39 +31,12 @@ type LiveEvent =
   | { type: 'done'; sessionId?: string; context?: ContextUsage | null }
   | { type: 'error'; error?: string };
 
-const FINISHED_REFETCH_DELAY_MS = 700;
-
 function compactSettings(settings?: AgentRunSettings): AgentRunSettings | undefined {
   if (!settings) return undefined;
   const compacted: AgentRunSettings = {};
   if (settings.model != null) compacted.model = settings.model;
   if (settings.reasoningEffort != null) compacted.reasoningEffort = settings.reasoningEffort;
   return Object.keys(compacted).length > 0 ? compacted : undefined;
-}
-
-function preserveLiveAssistantDetails(msgs: ChatMessage[], run?: LiveChatRun | null): ChatMessage[] {
-  const liveAssistant = run ? findLastAssistant(run.messages) : undefined;
-  if (!liveAssistant) return msgs;
-  const liveTools = liveAssistant.tools;
-  if (!liveAssistant.thinking && !liveTools?.length) return msgs;
-
-  for (let i = msgs.length - 1; i >= 0; i--) {
-    if (msgs[i].role !== 'assistant') continue;
-
-    const needsThinking = !!liveAssistant.thinking && !msgs[i].thinking;
-    const needsTools = !!liveTools?.length && !msgs[i].tools?.length;
-    if (!needsThinking && !needsTools) return msgs;
-
-    const copy = msgs.slice();
-    copy[i] = {
-      ...copy[i],
-      ...(needsThinking ? { thinking: liveAssistant.thinking } : {}),
-      ...(needsTools ? { tools: liveTools.map((tool) => ({ ...tool })) } : {}),
-    };
-    return copy;
-  }
-
-  return msgs;
 }
 
 function findLastAssistant(messages: LiveChatMessage[]): LiveChatMessage | undefined {
@@ -118,20 +91,36 @@ function snapshotMessages(messages: LiveChatMessage[]): ChatMessage[] {
   }));
 }
 
-function liveMessagesFor(committed: ChatMessage[], run: LiveChatRun): ChatMessage[] {
-  const live = snapshotMessages(run.messages);
+function sameRoleAndContent(left?: ChatMessage, right?: ChatMessage): boolean {
+  return !!left && !!right && left.role === right.role && left.content === right.content;
+}
+
+function committedWithoutLiveRun(committed: ChatMessage[], live: ChatMessage[]): ChatMessage[] {
   const firstLive = live[0];
+  if (!firstLive || firstLive.role !== 'user') return committed;
+
   const lastCommitted = committed[committed.length - 1];
+  const secondLastCommitted = committed[committed.length - 2];
+  const lastLive = live[live.length - 1];
 
   if (
-    firstLive?.role === 'user' &&
-    lastCommitted?.role === 'user' &&
-    firstLive.content === lastCommitted.content
+    sameRoleAndContent(secondLastCommitted, firstLive) &&
+    lastLive?.role === 'assistant' &&
+    sameRoleAndContent(lastCommitted, lastLive)
   ) {
-    return live.slice(1);
+    return committed.slice(0, -2);
   }
 
-  return live;
+  if (sameRoleAndContent(lastCommitted, firstLive)) {
+    return committed.slice(0, -1);
+  }
+
+  return committed;
+}
+
+function messagesWithLiveRun(committed: ChatMessage[], run: LiveChatRun): ChatMessage[] {
+  const live = snapshotMessages(run.messages);
+  return [...committedWithoutLiveRun(committed, live), ...live];
 }
 
 export function useChat() {
@@ -147,16 +136,7 @@ export function useChat() {
   const committedMessagesRef = useRef<ChatMessage[]>([]);
   const liveRunRef = useRef<LiveChatRun | null>(null);
   const liveContextRef = useRef<ContextUsage | null>(null);
-  const lastCommittedRunIdRef = useRef<string | null>(null);
-  const refetchTimerRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
-
-  const clearRefetchTimer = useCallback(() => {
-    if (refetchTimerRef.current !== null) {
-      window.clearTimeout(refetchTimerRef.current);
-      refetchTimerRef.current = null;
-    }
-  }, []);
 
   const closeLiveSource = useCallback(() => {
     sourceRef.current?.close();
@@ -167,19 +147,18 @@ export function useChat() {
     postAbortRef.current?.abort();
     postAbortRef.current = null;
     closeLiveSource();
-    clearRefetchTimer();
     if (rafRef.current !== null) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
     }
-  }, [clearRefetchTimer, closeLiveSource]);
+  }, [closeLiveSource]);
 
   const publishState = useCallback(() => {
     const committed = committedMessagesRef.current;
     const liveRun = liveRunRef.current;
 
-    if (liveRun && liveRun.runId !== lastCommittedRunIdRef.current) {
-      const merged = [...committed, ...liveMessagesFor(committed, liveRun)];
+    if (liveRun) {
+      const merged = messagesWithLiveRun(committed, liveRun);
       const assistant = findLastAssistant(liveRun.messages);
       const streaming = liveRun.status === 'streaming';
 
@@ -206,52 +185,19 @@ export function useChat() {
     });
   }, [publishState]);
 
-  const refreshCommittedMessages = useCallback(async (taskId: string, finishedRunId?: string) => {
-    try {
-      const { messages: msgs, context: persistedContext } = await fetchMessages(taskId);
-      if (taskIdRef.current !== taskId) return;
-
-      const finishedLiveRun = finishedRunId && liveRunRef.current?.runId === finishedRunId
-        ? liveRunRef.current
-        : null;
-      committedMessagesRef.current = preserveLiveAssistantDetails(msgs as ChatMessage[], finishedLiveRun);
-      liveContextRef.current = persistedContext ?? liveContextRef.current;
-
-      if (finishedRunId) {
-        lastCommittedRunIdRef.current = finishedRunId;
-        if (liveRunRef.current?.runId === finishedRunId) liveRunRef.current = null;
-      }
-
-      publishState();
-    } catch (err) {
-      console.warn('Failed to refresh committed messages:', err);
-    }
-  }, [publishState]);
-
-  const scheduleFinishedRefresh = useCallback((taskId: string, runId: string) => {
-    clearRefetchTimer();
-    refetchTimerRef.current = window.setTimeout(() => {
-      refetchTimerRef.current = null;
-      void refreshCommittedMessages(taskId, runId);
-    }, FINISHED_REFETCH_DELAY_MS);
-  }, [clearRefetchTimer, refreshCommittedMessages]);
-
   const applySnapshot = useCallback((run: LiveChatRun) => {
     if (taskIdRef.current && taskIdRef.current !== run.taskId) return;
     taskIdRef.current = run.taskId;
 
-    if (run.runId === lastCommittedRunIdRef.current) {
-      if (liveRunRef.current?.runId === run.runId) liveRunRef.current = null;
-      publishState();
-      return;
+    const existingLiveRun = liveRunRef.current;
+    if (existingLiveRun && existingLiveRun.runId !== run.runId) {
+      committedMessagesRef.current = messagesWithLiveRun(committedMessagesRef.current, existingLiveRun);
     }
 
     liveRunRef.current = run;
     if (run.context !== undefined) liveContextRef.current = run.context;
     publishState();
-
-    if (run.status === 'done') scheduleFinishedRefresh(run.taskId, run.runId);
-  }, [publishState, scheduleFinishedRefresh]);
+  }, [publishState]);
 
   const applyLiveEvent = useCallback((event: LiveEvent) => {
     if (event.type === 'snapshot') {
@@ -309,12 +255,8 @@ export function useChat() {
       }
       run.updatedAt = Date.now();
       publishState();
-
-      if (run.status === 'done') {
-        scheduleFinishedRefresh(run.taskId, run.runId);
-      }
     }
-  }, [applySnapshot, publishState, scheduleFinishedRefresh, schedulePublish]);
+  }, [applySnapshot, publishState, schedulePublish]);
 
   const openLiveSubscription = useCallback((taskId: string) => {
     const existing = sourceRef.current;
@@ -348,7 +290,6 @@ export function useChat() {
     committedMessagesRef.current = [];
     liveRunRef.current = null;
     liveContextRef.current = null;
-    lastCommittedRunIdRef.current = null;
     setMessages([]);
     setIsStreaming(false);
     setThinkingContent('');

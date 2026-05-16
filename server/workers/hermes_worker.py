@@ -783,8 +783,7 @@ def _resolve_toolsets(cfg: dict[str, Any]) -> list[str] | None:
     return None
 
 
-def _fallback_model(cfg: dict[str, Any]) -> dict[str, Any] | None:
-    raw = cfg.get("fallback_model")
+def _normalize_fallback_entry(raw: Any) -> dict[str, Any] | None:
     if not isinstance(raw, dict):
         return None
     model = string_or_none(raw.get("model"))
@@ -795,6 +794,20 @@ def _fallback_model(cfg: dict[str, Any]) -> dict[str, Any] | None:
         "provider": string_or_none(raw.get("provider")),
         "base_url": string_or_none(raw.get("base_url")),
     }
+
+
+def _fallback_model(cfg: dict[str, Any]) -> dict[str, Any] | list[dict[str, Any]] | None:
+    raw_chain = cfg.get("fallback_providers")
+    if isinstance(raw_chain, list):
+        chain = [
+            entry
+            for item in raw_chain
+            if (entry := _normalize_fallback_entry(item)) is not None
+        ]
+        if chain:
+            return chain
+
+    return _normalize_fallback_entry(cfg.get("fallback_model"))
 
 
 def _parse_reasoning(effort: str | None) -> dict[str, Any] | None:
@@ -898,6 +911,22 @@ def _create_agent(
     }
 
     return _AIAgent(**filtered_kwargs)
+
+
+def _agent_failure_message(text: str) -> str | None:
+    clean = str(text or "").strip()
+    if not clean:
+        return None
+
+    failure_prefixes = (
+        "API call failed after",
+        "Rate limited after",
+        "Non-retryable client error",
+    )
+    if clean.startswith(failure_prefixes):
+        return clean
+
+    return None
 
 
 def _sync_session_identity(agent: Any, session_id: str) -> None:
@@ -1075,6 +1104,10 @@ def _run_chat(request_id: str, request: dict[str, Any]) -> None:
                 pass
 
     final_text = str(result.get("final_response") or "")
+    failure_message = _agent_failure_message(final_text)
+    if failure_message:
+        raise WorkerError(failure_message, code="provider_error")
+
     if final_text and not state["text"]:
         _send({"id": request_id, "type": "text_delta", "content": final_text})
     if result.get("last_reasoning") and not state["thinking"]:
@@ -1126,7 +1159,11 @@ def _run_one_shot_agent(label: str, system_message: str, user_message: str) -> s
         system_message=system_message,
         conversation_history=[],
     )
-    return str(result.get("final_response") or "")
+    final_text = str(result.get("final_response") or "")
+    failure_message = _agent_failure_message(final_text)
+    if failure_message:
+        raise WorkerError(failure_message, code="provider_error")
+    return final_text
 
 
 def _submit_background_agent_request(
