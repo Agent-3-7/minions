@@ -44,6 +44,7 @@ function compactSettings(settings?: AgentRunSettings): AgentRunSettings | undefi
   const compacted: AgentRunSettings = {};
   if (settings.model != null) compacted.model = settings.model;
   if (settings.reasoningEffort != null) compacted.reasoningEffort = settings.reasoningEffort;
+  if (settings.mode != null) compacted.mode = settings.mode;
   return Object.keys(compacted).length > 0 ? compacted : undefined;
 }
 
@@ -123,6 +124,26 @@ function committedWithoutLiveRun(committed: ChatMessage[], live: ChatMessage[]):
     return committed.slice(0, -1);
   }
 
+  // Goal runs produce multiple user+assistant pairs in committed that overlap with live messages.
+  // Scan for the first live user message paired with the last live assistant to find the cut point.
+  let finalLiveAssistant: ChatMessage | undefined;
+  for (let k = live.length - 1; k >= 0; k--) {
+    if (live[k].role === 'assistant' && live[k].content.length > 0) {
+      finalLiveAssistant = live[k];
+      break;
+    }
+  }
+  if (finalLiveAssistant) {
+    for (let i = committed.length - 1; i >= 0; i--) {
+      if (!sameRoleAndContent(committed[i], firstLive)) continue;
+      for (let j = i + 1; j < committed.length; j++) {
+        if (sameRoleAndContent(committed[j], finalLiveAssistant)) {
+          return committed.slice(0, i);
+        }
+      }
+    }
+  }
+
   return committed;
 }
 
@@ -166,10 +187,10 @@ export function useChat() {
     const liveRun = liveRunRef.current;
 
     if (liveRun) {
-      const isChatRun = liveRun.kind === 'chat';
-      const merged = isChatRun ? messagesWithLiveRun(committed, liveRun) : committed;
-      const assistant = isChatRun ? findLastAssistant(liveRun.messages) : undefined;
-      const streaming = isChatRun && liveRun.status === 'streaming';
+      const isMessageRun = liveRun.kind === 'chat' || liveRun.kind === 'goal';
+      const merged = isMessageRun ? messagesWithLiveRun(committed, liveRun) : committed;
+      const assistant = isMessageRun ? findLastAssistant(liveRun.messages) : undefined;
+      const streaming = isMessageRun && liveRun.status === 'streaming';
 
       setMessages(merged);
       setIsStreaming(streaming);

@@ -5,10 +5,13 @@ import { InputToolbar } from './InputToolbar';
 import { createTask } from '../lib/api';
 import { useAgentConfig } from '../hooks/useAgentConfig';
 import { isEditableTarget, handleChatKeyDown } from '../lib/keyboard';
+import { GOAL_MODE_PLACEHOLDER } from '../lib/format';
+import type { ChatRunMode } from '@shared/types';
 
 export function NewTaskPage() {
   const navigate = useNavigate();
   const [input, setInput] = useState('');
+  const [runMode, setRunMode] = useState<ChatRunMode>('task');
   const [isCreating, setIsCreating] = useState(false);
   const { defaults, modelGroups, model, setModel, reasoningEffort, setReasoningEffort, isLoading } = useAgentConfig();
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -34,13 +37,13 @@ export function NewTaskPage() {
       navigate(`/tasks/${task.id}`, {
         state: {
           initialMessage: text,
-          initialSettings: { model, reasoningEffort },
+          initialSettings: { model, reasoningEffort, mode: runMode },
         },
       });
     } catch {
       setIsCreating(false);
     }
-  }, [defaults, input, isCreating, isLoading, model, navigate, reasoningEffort]);
+  }, [defaults, input, isCreating, isLoading, model, navigate, reasoningEffort, runMode]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => handleChatKeyDown(e, handleSubmit),
@@ -60,7 +63,7 @@ export function NewTaskPage() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Describe your task in detail..."
+            placeholder={runMode === 'goal' ? GOAL_MODE_PLACEHOLDER : 'Describe your task in detail...'}
             rows={4}
             className="w-full resize-none bg-transparent px-5 pt-4 pb-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none leading-relaxed"
           />
@@ -68,11 +71,13 @@ export function NewTaskPage() {
             <InputToolbar
               model={model}
               reasoningEffort={reasoningEffort}
+              runMode={runMode}
               defaults={defaults}
               modelGroups={modelGroups}
               disabled={isCreating}
               onModelChange={setModel}
               onReasoningEffortChange={setReasoningEffort}
+              onRunModeChange={setRunMode}
             />
             <button
               onClick={handleSubmit}

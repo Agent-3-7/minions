@@ -1,6 +1,8 @@
 import type {
   AgentDefaults,
   AgentModelsResponse,
+  GoalDecision,
+  GoalStateSnapshot,
   ScheduledTask,
   ScheduledTaskInput,
   SessionMetadata,
@@ -25,6 +27,12 @@ export type WorkerRequest =
   | { id: string; type: 'scheduledTasks.tick' }
   | { id: string; type: 'session.messages.get'; sessionId: string; taskId?: string }
   | { id: string; type: 'session.get'; sessionId: string }
+  | { id: string; type: 'goal.status'; sessionId: string }
+  | { id: string; type: 'goal.set'; sessionId: string; goal: string; maxTurns?: number | null }
+  | { id: string; type: 'goal.pause'; sessionId: string; reason?: string }
+  | { id: string; type: 'goal.resume'; sessionId: string }
+  | { id: string; type: 'goal.clear'; sessionId: string }
+  | { id: string; type: 'goal.evaluate'; sessionId: string; responseText: string }
   | {
       id: string;
       type: 'chat';
@@ -34,13 +42,6 @@ export type WorkerRequest =
       settings: AgentRunSettings;
       taskId?: string;
       taskTitle?: string | null;
-    }
-  | {
-      id: string;
-      type: 'judge.completion';
-      taskTitle: string;
-      taskDescription?: string | null;
-      responseText: string;
     }
   | {
       id: string;
@@ -72,7 +73,9 @@ export type WorkerResult =
   | { executed: number }
   | { messages: TaskMessage[] }
   | { session: SessionMetadata | null }
-  | { done: boolean; reason: string }
+  | { goal: GoalStateSnapshot | null }
+  | { cleared: boolean }
+  | GoalDecision
   | { title: string }
   | {
       compressed: boolean;

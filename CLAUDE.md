@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Minions is an autonomous task management system with a Kanban board UI. Users create tasks via a chat interface; each task is a Hermes agent session that autonomously decides how to execute — doing the work itself, spawning child sessions, or creating Hermes cron jobs shown in Minions as Scheduled Tasks. After each agent turn, a lightweight completion judge evaluates whether the task is done and moves it to review automatically. The user never talks to child sessions directly; recurring work is managed from the Scheduled Tasks page.
+Minions is an autonomous task management system with a Kanban board UI. Users create tasks via a chat interface; each task is a Hermes agent session that autonomously decides how to execute — doing the work itself, spawning child sessions, or creating Hermes cron jobs shown in Minions as Scheduled Tasks. Successful agent runs move tasks to review automatically. The user never talks to child sessions directly; recurring work is managed from the Scheduled Tasks page.
 
 ## Prerequisites
 
@@ -59,15 +59,15 @@ All persistent state lives under `MINIONS_HOME` (default: `~/.minions/`):
 |----------|--------|-----------|
 | Agent communication | Python subprocess + JSONL | Imports Hermes AIAgent directly — no HTTP gateway overhead, structured streaming events, per-task model/reasoning control |
 | Task execution | Autonomous agent session | Each task IS a Hermes session. The agent decides execution strategy (self, child session, Hermes cron job/scheduled task). Our backend doesn't manage child sessions. |
-| Completion judge | Lightweight LLM call after each agent turn | After a chat stream completes, the server sends the response to a `judge.completion` worker request. A fast judge model evaluates whether the task looks done and auto-moves to `in_review`. No polling, no prompt pollution — the judge runs outside the conversation. |
+| Review transition | Successful agent runs move to review | After a chat or goal run completes successfully, the server records the response metadata and moves an `in_progress` task to `in_review` in the same update. No separate completion evaluation runs outside the conversation. |
 | Source of truth | Hermes SessionDB for chat history; Minions SQLite for task metadata; in-memory LiveChatRun for active streams | Hermes owns all transcripts and replay. Minions has no message table. `tasks.id` is the Hermes root session ID; Minions stores task metadata, per-task settings, and `last_agent_response_at`. During active streaming, `live-chat.ts` holds an in-memory `LiveChatRun` with accumulated messages. After streaming ends and the run TTL expires, chat history is projected from Hermes SessionDB on demand. |
-| Status ownership | Judge auto-moves to `in_review`; human moves everything else via drag-drop | Clean separation: judge evaluates completion, human controls all manual transitions. |
+| Status ownership | Successful runs auto-move to `in_review`; human moves everything else via drag-drop | Clean separation: the system queues completed agent work for review, and humans control final completion. |
 
 ## Key Patterns
 
 - **Session lifecycle**: `tasks.id` is the Minions task ID and the Hermes root session ID. Chat and history reads all use `task.id`; Minions does not persist Hermes-returned child or continuation session IDs.
 - **Chat projection**: `GET /tasks/:id/messages` loads raw rows from Hermes `SessionDB.get_messages()` via the Python worker, which filters out tool-call-only turns and empty messages. The client shows optimistic messages during streaming and loads the projected history from Hermes on page load/task switch.
-- **Completion judge**: After each successful chat stream, `consumeChatRun()` fires a `judge.completion` request to the Python worker with the task title, description, and the agent's accumulated response text (truncated to ~4KB). The judge creates a throwaway AIAgent with `reasoning_effort=none`, evaluates the response, and returns `{done, reason}`. If `done=true` and the task is still `in_progress`, the server auto-moves it to `in_review` and broadcasts the update. Judge failures are non-critical — the task stays as-is.
+- **Review transition**: After each successful chat or goal run, `recordCompletedAgentRun()` records `last_agent_response_at` and context usage. If the task is still `in_progress`, the same update moves it to `in_review` and broadcasts the change.
 - **Agent defaults**: Global default model/reasoning settings are stored in the Python worker via `settings.set` and surfaced through `GET /api/agent/defaults`. The Settings page lets users pick the default model (two-panel picker with search) and reasoning effort for all new tasks. Agent settings routes live in `server/routes/agent.ts`.
 - **Per-task model/reasoning**: Each task can override the default Hermes model and reasoning effort (`agent_model`, `reasoning_effort` columns on `tasks`). Settings logic lives in `server/agent-settings.ts`. The Python worker resolves the final model/provider from Hermes config + per-task overrides.
 - **Live chat**: `POST /api/tasks/:id/messages` returns `202` immediately with a `runId`. The server consumes the agent stream in the background via `consumeChatRun()` in `server/routes/chat.ts`. Clients subscribe to `GET /api/tasks/:id/live` SSE for real-time `text_delta`, `thinking_delta`, `tool_progress`, `done`, and `error` events. On connect, the client receives a snapshot of the current in-memory `LiveChatRun` if one exists. Runs are kept in memory briefly after completion (30s normal, 5min on error) so late-connecting clients can catch up.
@@ -89,9 +89,8 @@ All persistent state lives under `MINIONS_HOME` (default: `~/.minions/`):
   ┌─────────│  IN_PROGRESS  │◄─────────┐
   │         └───────┬───────┘          │
   │                 │                  │
-  │     completion  │                  │ human moves
-  │         judge   │                  │ (drag-drop)
-  │      "done"     │                  │
+  │   successful    │                  │ human moves
+  │   agent run     │                  │ (drag-drop)
   │                 │                  │
   │          ┌──────▼──────┐           │
   │          │  IN_REVIEW   │          │
@@ -107,7 +106,7 @@ All persistent state lives under `MINIONS_HOME` (default: `~/.minions/`):
     moves    └─────────────┘
 ```
 
-**Judge moves to**: `in_review` (via completion judge after each agent turn)
+**System moves to**: `in_review` (after successful agent runs)
 **Human moves to**: `in_progress`, `done` (via drag-and-drop or action buttons)
 
 ## Data Flows
@@ -125,31 +124,25 @@ User creates task via UI
   → Each event is broadcast to /live SSE subscribers in real time
   → Python worker loads prior Hermes history, runs AIAgent.run_conversation()
   → Hermes persists the full turn (user + assistant) in SessionDB
-  → Successful completion records tasks.last_agent_response_at
+  → Successful completion records tasks.last_agent_response_at and moves task to review
   → Run state expires from memory after TTL; history loads from Hermes on next page load
 ```
 
-### Completion Judge
+### Completion To Review
 
 ```
 Chat stream completes (done event in consumeChatRun)
-  → Accumulated response text available from stream
-  → Fire judgeTaskCompletion() (async, non-blocking)
-  → Send judge.completion request to Python worker with task title, description, response text
-  → Worker creates throwaway AIAgent with reasoning_effort=none
-  → Judge prompt asks: "given the task and response, is the task complete?"
-  → Returns {done: boolean, reason: string}
-  → IF done=true AND task.status === 'in_progress':
-      → Update task status to 'in_review'
-      → Broadcast task_updated event
-  → IF done=false or judge fails: task stays as-is
+  → recordCompletedAgentRun() records response timestamp and context usage
+  → IF task.status === 'in_progress':
+      → Update task status to 'in_review' in the same write
+  → Broadcast task_updated event
 ```
 
 ## Worker Protocol
 
 The Python worker communicates via JSONL (one JSON object per line) over stdin/stdout.
 
-**Request types**: `health`, `chat`, `judge.completion`, `session.messages.get`, `session.get`, `settings.get`, `settings.set`, `models.list`, `scheduledTasks.list`, `scheduledTasks.get`, `scheduledTasks.create`, `scheduledTasks.update`, `scheduledTasks.pause`, `scheduledTasks.resume`, `scheduledTasks.run`, `scheduledTasks.remove`, `scheduledTasks.tick`
+**Request types**: `health`, `chat`, `session.messages.get`, `session.get`, `goal.status`, `goal.set`, `goal.pause`, `goal.resume`, `goal.clear`, `goal.evaluate`, `settings.get`, `settings.set`, `models.list`, `title.generate`, `session.compress`, `scheduledTasks.list`, `scheduledTasks.get`, `scheduledTasks.create`, `scheduledTasks.update`, `scheduledTasks.pause`, `scheduledTasks.resume`, `scheduledTasks.run`, `scheduledTasks.remove`, `scheduledTasks.tick`
 
 **Stream events** (emitted during `chat` requests):
 
@@ -184,7 +177,7 @@ All optional — defaults work for local development.
 PORT=6969                        # Web server port
 HERMES_PYTHON=                   # Path to Python with Hermes deps (auto-detected if unset)
 HERMES_AGENT_DIR=                # Path to Hermes agent dir (default: ~/.hermes/hermes-agent)
-HERMES_AGENT_RUN_LIMIT=10        # Max concurrent agent runs in Python worker (chat + judge)
+HERMES_AGENT_RUN_LIMIT=10        # Max concurrent AIAgent.run_conversation calls
 MINIONS_HOME=~/.minions          # State directory (DB, logs, backups, workspace)
 DB_PATH=~/.minions/data/minions.db  # SQLite database path
 MINIONS_MODEL_LIST_CACHE_TTL_SECONDS=60  # Cache TTL for model list in Python worker

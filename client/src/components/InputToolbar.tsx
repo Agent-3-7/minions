@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, Loader2, Search, Sparkles, Zap, type LucideIcon } from 'lucide-react';
-import { REASONING_EFFORTS, type AgentDefaults, type AgentModelGroup, type ContextUsage, type ReasoningEffort } from '@shared/types';
+import { Check, ChevronDown, Loader2, Search, Sparkles, Target, Zap, type LucideIcon } from 'lucide-react';
+import { REASONING_EFFORTS, type AgentDefaults, type AgentModelGroup, type ChatRunMode, type ContextUsage, type ReasoningEffort } from '@shared/types';
 import { formatTokenCount } from '../lib/format';
 
 interface ContextRingProps {
@@ -995,11 +995,13 @@ export function ModelPicker({
 interface InputToolbarProps {
   model: string | null;
   reasoningEffort: ReasoningEffort | null;
+  runMode?: ChatRunMode;
   defaults?: AgentDefaults | null;
   modelGroups?: AgentModelGroup[];
   disabled?: boolean;
   onModelChange: (model: string | null) => void;
   onReasoningEffortChange: (effort: ReasoningEffort | null) => void;
+  onRunModeChange?: (mode: ChatRunMode) => void;
 }
 
 function hasModel(groups: AgentModelGroup[] | undefined, model: string | null): boolean {
@@ -1027,18 +1029,49 @@ function LoadingToolbarButton({
   );
 }
 
+function GoalModeToggle({
+  value,
+  disabled = false,
+  onChange,
+}: {
+  value: ChatRunMode;
+  disabled?: boolean;
+  onChange: (value: ChatRunMode) => void;
+}) {
+  const active = value === 'goal';
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      aria-pressed={active}
+      aria-label={active ? 'Turn off goal mode' : 'Turn on goal mode'}
+      onClick={() => onChange(active ? 'task' : 'goal')}
+      className={`inline-flex h-9 max-w-full items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+        active
+          ? 'border-zinc-500 bg-zinc-100 text-zinc-950 ring-2 ring-zinc-900/10 hover:bg-zinc-200 dark:border-zinc-400 dark:bg-zinc-700 dark:text-zinc-50 dark:ring-white/10 dark:hover:bg-zinc-600'
+          : 'border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700/70'
+      }`}
+    >
+      <Target size={12} className="shrink-0" strokeWidth={2.5} />
+      <span>Goal</span>
+    </button>
+  );
+}
+
 export function InputToolbar({
   model,
   reasoningEffort,
+  runMode,
   defaults,
   modelGroups = [],
   disabled = false,
   onModelChange,
   onReasoningEffortChange,
+  onRunModeChange,
 }: InputToolbarProps) {
   const defaultModel = defaults?.model ?? null;
   const defaultReasoning = defaults?.reasoningEffort ?? null;
-
   const reasoningOptions = useMemo<ToolbarSelectOption[]>(() => [
     {
       value: '',
@@ -1079,6 +1112,14 @@ export function InputToolbar({
         minMenuWidth={180}
         onChange={(nextReasoning) => onReasoningEffortChange((nextReasoning || null) as ReasoningEffort | null)}
       />
+
+      {runMode && onRunModeChange && (
+        <GoalModeToggle
+          value={runMode}
+          disabled={disabled}
+          onChange={onRunModeChange}
+        />
+      )}
     </div>
   );
 }

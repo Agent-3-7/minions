@@ -2,6 +2,8 @@ import type {
   AgentRunSettings,
   CompactResult,
   ContextUsage,
+  GoalDecision,
+  GoalStateSnapshot,
   ScheduledTask,
   ScheduledTaskInput,
   SessionMetadata,
@@ -51,12 +53,6 @@ export interface AgentAdapter {
 
   getSessionMetadata(sessionId: string): Promise<SessionMetadata | null>;
 
-  judgeCompletion(
-    taskTitle: string,
-    taskDescription: string | null,
-    responseText: string,
-  ): Promise<{ done: boolean; reason: string }>;
-
   generateTitle(description: string): Promise<{ title: string }>;
 
   compressSession(
@@ -68,6 +64,22 @@ export interface AgentAdapter {
       settings?: AgentRunSettings;
     },
   ): Promise<CompactResult>;
+
+  getGoalStatus(sessionId: string): Promise<GoalStateSnapshot | null>;
+
+  setGoal(
+    sessionId: string,
+    goal: string,
+    options?: { maxTurns?: number | null },
+  ): Promise<GoalStateSnapshot>;
+
+  pauseGoal(sessionId: string, reason?: string): Promise<GoalStateSnapshot | null>;
+
+  resumeGoal(sessionId: string): Promise<GoalStateSnapshot | null>;
+
+  clearGoal(sessionId: string): Promise<boolean>;
+
+  evaluateGoal(sessionId: string, responseText: string): Promise<GoalDecision>;
 
   listScheduledTasks(includeDisabled?: boolean): Promise<ScheduledTask[]>;
 

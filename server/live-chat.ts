@@ -1,6 +1,6 @@
 import type { Response } from 'express';
 import { v4 as uuid } from 'uuid';
-import type { LiveChatRun, LiveChatMessage, LiveChatRunStatus, TaskRunState, ToolProgressEvent } from '../shared/types.js';
+import type { GoalStateSnapshot, LiveChatRun, LiveChatMessage, LiveChatRunStatus, TaskRunState, ToolProgressEvent } from '../shared/types.js';
 import type { StreamEvent } from './adapters/types.js';
 
 export type LiveChatEvent = StreamEvent | { type: 'snapshot'; run: LiveChatRun };
@@ -19,6 +19,7 @@ function cloneRun(run: LiveChatRun): LiveChatRun {
       ...message,
       tools: message.tools ? message.tools.map((tool) => ({ ...tool })) : undefined,
     })),
+    goal: run.goal ? { ...run.goal } : null,
     context: run.context ? { ...run.context } : null,
   };
 }
@@ -31,6 +32,7 @@ function runState(run: LiveChatRun): TaskRunState {
     status: run.status,
     startedAt: run.startedAt,
     updatedAt: run.updatedAt,
+    goal: run.goal ? { ...run.goal } : null,
   };
 }
 
@@ -136,6 +138,22 @@ export function startRun(taskId: string, sessionId: string, userContent: string)
   });
 }
 
+export function startGoalRun(taskId: string, sessionId: string, goal?: GoalStateSnapshot | null): RunStart {
+  clearExpiry(taskId);
+  const now = Date.now();
+  return storeRun({
+    taskId,
+    runId: uuid(),
+    kind: 'goal',
+    sessionId,
+    status: 'streaming',
+    startedAt: now,
+    updatedAt: now,
+    messages: [],
+    goal: goal ? { ...goal } : null,
+  });
+}
+
 export function startCompactionRun(taskId: string, sessionId: string): RunStart {
   clearExpiry(taskId);
   const now = Date.now();
@@ -149,6 +167,52 @@ export function startCompactionRun(taskId: string, sessionId: string): RunStart 
     updatedAt: now,
     messages: [],
   });
+}
+
+function appendMessage(
+  taskId: string,
+  role: LiveChatMessage['role'],
+  content: string,
+  extra?: Partial<LiveChatMessage>,
+): void {
+  const run = runs.get(taskId);
+  if (!run) return;
+  const now = Date.now();
+  run.messages.push({ id: uuid(), task_id: taskId, role, content, created_at: now, ...extra });
+  run.updatedAt = now;
+}
+
+export function appendUserMessage(taskId: string, content: string): void {
+  appendMessage(taskId, 'user', content);
+}
+
+export function appendSystemMessage(taskId: string, content: string): void {
+  appendMessage(taskId, 'system', content);
+}
+
+export function startAssistantMessage(taskId: string): void {
+  appendMessage(taskId, 'assistant', '', { tools: [] });
+}
+
+export function updateRunContext(
+  taskId: string,
+  context: LiveChatRun['context'],
+  sessionId?: string,
+): TaskRunState | undefined {
+  const run = runs.get(taskId);
+  if (!run) return undefined;
+  if (sessionId) run.sessionId = sessionId;
+  if (context !== undefined) run.context = context;
+  run.updatedAt = Date.now();
+  return runState(run);
+}
+
+export function updateRunGoal(taskId: string, goal: GoalStateSnapshot | null): TaskRunState | undefined {
+  const run = runs.get(taskId);
+  if (!run) return undefined;
+  run.goal = goal ? { ...goal } : null;
+  run.updatedAt = Date.now();
+  return runState(run);
 }
 
 export function applyEvent(taskId: string, event: StreamEvent): void {

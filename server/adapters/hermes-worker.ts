@@ -8,6 +8,8 @@ import type {
   AgentDefaults,
   AgentModelsResponse,
   CompactResult,
+  GoalDecision,
+  GoalStateSnapshot,
   ScheduledTask,
   ScheduledTaskInput,
   SessionMetadata,
@@ -585,19 +587,6 @@ export class HermesWorkerAdapter implements AgentAdapter {
     return result.executed;
   }
 
-  async judgeCompletion(
-    taskTitle: string,
-    taskDescription: string | null,
-    responseText: string,
-  ): Promise<{ done: boolean; reason: string }> {
-    return await this.client.request<{ done: boolean; reason: string }>({
-      type: 'judge.completion',
-      taskTitle,
-      taskDescription,
-      responseText,
-    });
-  }
-
   async generateTitle(description: string): Promise<{ title: string }> {
     return await this.client.request<{ title: string }>({
       type: 'title.generate',
@@ -621,6 +610,62 @@ export class HermesWorkerAdapter implements AgentAdapter {
       currentTokens: options?.currentTokens,
       systemMessage: options?.systemMessage,
       settings: options?.settings,
+    });
+  }
+
+  async getGoalStatus(sessionId: string): Promise<GoalStateSnapshot | null> {
+    const result = await this.client.request<{ goal: GoalStateSnapshot | null }>({
+      type: 'goal.status',
+      sessionId,
+    });
+    return result.goal;
+  }
+
+  async setGoal(
+    sessionId: string,
+    goal: string,
+    options?: { maxTurns?: number | null },
+  ): Promise<GoalStateSnapshot> {
+    const result = await this.client.request<{ goal: GoalStateSnapshot | null }>({
+      type: 'goal.set',
+      sessionId,
+      goal,
+      maxTurns: options?.maxTurns,
+    });
+    if (!result.goal) throw new Error('Hermes did not return goal state');
+    return result.goal;
+  }
+
+  async pauseGoal(sessionId: string, reason?: string): Promise<GoalStateSnapshot | null> {
+    const result = await this.client.request<{ goal: GoalStateSnapshot | null }>({
+      type: 'goal.pause',
+      sessionId,
+      reason,
+    });
+    return result.goal;
+  }
+
+  async resumeGoal(sessionId: string): Promise<GoalStateSnapshot | null> {
+    const result = await this.client.request<{ goal: GoalStateSnapshot | null }>({
+      type: 'goal.resume',
+      sessionId,
+    });
+    return result.goal;
+  }
+
+  async clearGoal(sessionId: string): Promise<boolean> {
+    const result = await this.client.request<{ cleared: boolean }>({
+      type: 'goal.clear',
+      sessionId,
+    });
+    return result.cleared;
+  }
+
+  async evaluateGoal(sessionId: string, responseText: string): Promise<GoalDecision> {
+    return await this.client.request<GoalDecision>({
+      type: 'goal.evaluate',
+      sessionId,
+      responseText,
     });
   }
 }

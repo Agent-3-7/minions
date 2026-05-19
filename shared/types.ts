@@ -9,9 +9,13 @@ export interface AppVersion {
   version: string;
 }
 
+export const CHAT_RUN_MODES = ['task', 'goal'] as const;
+export type ChatRunMode = (typeof CHAT_RUN_MODES)[number];
+
 export interface AgentRunSettings {
   model?: string | null;
   reasoningEffort?: ReasoningEffort | null;
+  mode?: ChatRunMode;
 }
 
 export interface Task {
@@ -45,7 +49,7 @@ export interface ToolProgressEvent {
   label?: string;
 }
 
-export type TaskRunKind = 'chat' | 'compact';
+export type TaskRunKind = 'chat' | 'goal' | 'compact';
 export type LiveChatRunStatus = 'streaming' | 'compacting' | 'done' | 'error';
 
 export interface TaskRunState {
@@ -55,6 +59,7 @@ export interface TaskRunState {
   status: LiveChatRunStatus;
   startedAt: number;
   updatedAt: number;
+  goal?: GoalStateSnapshot | null;
 }
 
 export type BoardEvent =
@@ -75,6 +80,7 @@ export interface LiveChatRun {
   startedAt: number;
   updatedAt: number;
   messages: LiveChatMessage[];
+  goal?: GoalStateSnapshot | null;
   context?: ContextUsage | null;
   error?: string;
 }
@@ -90,6 +96,25 @@ export interface CompactResult {
   previousMessageCount: number;
   compressedMessageCount: number;
   context?: ContextUsage | null;
+}
+
+export interface GoalStateSnapshot {
+  goal: string;
+  status: 'active' | 'paused' | 'done' | 'cleared';
+  turnsUsed: number;
+  maxTurns: number;
+  lastReason?: string | null;
+  pausedReason?: string | null;
+}
+
+export interface GoalDecision {
+  status: GoalStateSnapshot['status'] | null;
+  shouldContinue: boolean;
+  continuationPrompt?: string | null;
+  verdict: 'done' | 'continue' | 'skipped' | 'inactive';
+  reason: string;
+  message: string;
+  state?: GoalStateSnapshot | null;
 }
 
 export interface SessionMetadata {

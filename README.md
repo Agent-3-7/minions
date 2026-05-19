@@ -36,7 +36,7 @@ The Settings page also shows the version of the running Minions server.
 
 - **Kanban board**: see every task at a glance: in progress, in review, done
 - **Autonomous execution**: describe what you want in chat, walk away; the agent decides how to get it done
-- **Completion judge**: after each agent turn, a lightweight LLM call evaluates whether the task is done
+- **Automatic review queue**: successful agent runs move cards to ready for review
 - **Live streaming**: watch tool calls, reasoning, and responses in real time
 - **Human-in-the-loop**: agents propose completion; you verify and close. Nothing moves to done without your sign-off
 - **Per-task model control**: override model and reasoning effort on any task

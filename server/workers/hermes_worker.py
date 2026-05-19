@@ -8,7 +8,6 @@ import dataclasses
 import inspect
 import json
 import os
-import re
 import sys
 import threading
 import time
@@ -47,8 +46,9 @@ from hermes_scheduled_tasks import (
 
 PROTOCOL_OUT = sys.stdout
 PROTOCOL_LOCK = threading.Lock()
+MINIONS_GOAL_MAX_TURNS = 20
 
-# Cap on concurrent AIAgent.run_conversation calls (chat + judge).
+# Cap on concurrent AIAgent.run_conversation calls.
 AGENT_RUN_LIMIT = int(os.environ.get("HERMES_AGENT_RUN_LIMIT", "10"))
 AGENT_SEMAPHORE = threading.BoundedSemaphore(AGENT_RUN_LIMIT)
 ACTIVE_TASKS: dict[str, str] = {}
@@ -1022,6 +1022,94 @@ def _warm_agent() -> None:
     _load_config()
 
 
+def _goal_manager(session_id: str) -> Any:
+    _ensure_imports()
+    if not session_id:
+        raise WorkerError("Session ID is required.", code="bad_request")
+    from hermes_cli.goals import GoalManager
+
+    return GoalManager(session_id=session_id, default_max_turns=MINIONS_GOAL_MAX_TURNS)
+
+
+def _project_goal_state(state: Any) -> dict[str, Any] | None:
+    if not state:
+        return None
+    return {
+        "goal": str(getattr(state, "goal", "") or ""),
+        "status": str(getattr(state, "status", "") or "active"),
+        "turnsUsed": int(getattr(state, "turns_used", 0) or 0),
+        "maxTurns": int(getattr(state, "max_turns", 0) or 0),
+        "lastReason": string_or_none(getattr(state, "last_reason", None)),
+        "pausedReason": string_or_none(getattr(state, "paused_reason", None)),
+    }
+
+
+def _project_goal_decision(decision: dict[str, Any], state: Any) -> dict[str, Any]:
+    return {
+        "status": string_or_none(decision.get("status")),
+        "shouldContinue": bool(decision.get("should_continue")),
+        "continuationPrompt": string_or_none(decision.get("continuation_prompt")),
+        "verdict": string_or_none(decision.get("verdict")) or "inactive",
+        "reason": string_or_none(decision.get("reason")) or "",
+        "message": string_or_none(decision.get("message")) or "",
+        "state": _project_goal_state(state),
+    }
+
+
+def _goal_mgr_from_request(request: dict[str, Any]) -> Any:
+    return _goal_manager(string_or_none(request.get("sessionId")) or "")
+
+
+def _goal_status(request: dict[str, Any]) -> dict[str, Any]:
+    mgr = _goal_mgr_from_request(request)
+    return {"goal": _project_goal_state(mgr.state)}
+
+
+def _goal_set(request: dict[str, Any]) -> dict[str, Any]:
+    goal = string_or_none(request.get("goal")) or ""
+    if not goal.strip():
+        raise WorkerError("Goal text is required.", code="bad_request")
+
+    mgr = _goal_mgr_from_request(request)
+    raw_max_turns = request.get("maxTurns")
+    if raw_max_turns is None:
+        state = mgr.set(goal)
+    else:
+        try:
+            max_turns = int(raw_max_turns)
+        except (TypeError, ValueError) as exc:
+            raise WorkerError("maxTurns must be a positive integer.", code="bad_request") from exc
+        if max_turns <= 0:
+            raise WorkerError("maxTurns must be a positive integer.", code="bad_request")
+        state = mgr.set(goal, max_turns=max_turns)
+    return {"goal": _project_goal_state(state)}
+
+
+def _goal_pause(request: dict[str, Any]) -> dict[str, Any]:
+    reason = string_or_none(request.get("reason")) or "user-paused"
+    mgr = _goal_mgr_from_request(request)
+    return {"goal": _project_goal_state(mgr.pause(reason))}
+
+
+def _goal_resume(request: dict[str, Any]) -> dict[str, Any]:
+    mgr = _goal_mgr_from_request(request)
+    return {"goal": _project_goal_state(mgr.resume())}
+
+
+def _goal_clear(request: dict[str, Any]) -> dict[str, Any]:
+    mgr = _goal_mgr_from_request(request)
+    had_goal = bool(mgr.has_goal())
+    mgr.clear()
+    return {"cleared": had_goal}
+
+
+def _goal_evaluate(request: dict[str, Any]) -> dict[str, Any]:
+    response_text = string_or_none(request.get("responseText")) or ""
+    mgr = _goal_mgr_from_request(request)
+    decision = mgr.evaluate_after_turn(response_text)
+    return _project_goal_decision(decision, mgr.state)
+
+
 def _run_chat(request_id: str, request: dict[str, Any]) -> None:
     settings = request.get("settings") if isinstance(request.get("settings"), dict) else {}
     requested_model = string_or_none(settings.get("model"))
@@ -1304,50 +1392,6 @@ def _run_compress(request: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _judge_completion(request: dict[str, Any]) -> dict[str, Any]:
-    """Evaluate whether the agent's response indicates task completion."""
-    task_title = string_or_none(request.get("taskTitle")) or ""
-    task_description = string_or_none(request.get("taskDescription")) or ""
-    response_text = string_or_none(request.get("responseText")) or ""
-
-    if not response_text:
-        return {"done": False, "reason": "empty response"}
-
-    response_text = truncate_with_ellipsis(response_text, 4000)
-
-    task_context = task_title
-    if task_description:
-        task_context += f"\n{task_description}"
-
-    judge_system = (
-        "You are a task completion judge. "
-        "Respond ONLY with a JSON object, nothing else. "
-        "Do not use any tools."
-    )
-
-    judge_prompt = (
-        f"Task:\n{task_context}\n\n"
-        f"Agent's most recent response:\n{response_text}\n\n"
-        'Has the agent completed the task? Respond with: {"done": true/false, "reason": "one sentence"}\n'
-        "- done=true ONLY when the response clearly delivers the final result or confirms completion\n"
-        "- done=false for: questions, partial progress, clarification requests, errors, or ongoing work"
-    )
-
-    text = _run_one_shot_agent("judge", judge_system, judge_prompt)
-    json_match = re.search(r"\{[^{}]*\}", text)
-    if json_match:
-        try:
-            parsed = json.loads(json_match.group())
-            return {
-                "done": bool(parsed.get("done", False)),
-                "reason": str(parsed.get("reason", "")),
-            }
-        except (json.JSONDecodeError, ValueError):
-            pass
-
-    return {"done": False, "reason": "unparseable response"}
-
-
 def _clean_generated_title(raw: str) -> str:
     """Sanitize the LLM's title output: strip quotes, trailing punctuation, cap length."""
     stripped = raw.strip()
@@ -1452,6 +1496,18 @@ def _handle_request(request: dict[str, Any]) -> None:
             _result(request_id, project_session_messages(request.get("sessionId"), request.get("taskId")))
         elif request_type == "session.get":
             _result(request_id, project_session_metadata(request.get("sessionId")))
+        elif request_type == "goal.status":
+            _result(request_id, _goal_status(request))
+        elif request_type == "goal.set":
+            _result(request_id, _goal_set(request))
+        elif request_type == "goal.pause":
+            _result(request_id, _goal_pause(request))
+        elif request_type == "goal.resume":
+            _result(request_id, _goal_resume(request))
+        elif request_type == "goal.clear":
+            _result(request_id, _goal_clear(request))
+        elif request_type == "goal.evaluate":
+            _submit_background_agent_request(request_id, request, name_prefix="goal", handler=_goal_evaluate)
         elif request_type == "chat":
             _submit_chat_request(request_id, request)
         elif request_type == "session.compress":
@@ -1462,8 +1518,6 @@ def _handle_request(request: dict[str, Any]) -> None:
                 handler=_run_compress,
                 task_key=_task_key_for(request),
             )
-        elif request_type == "judge.completion":
-            _submit_background_agent_request(request_id, request, name_prefix="judge", handler=_judge_completion)
         elif request_type == "title.generate":
             _submit_background_agent_request(request_id, request, name_prefix="title", handler=_generate_title)
         else:

@@ -3,6 +3,8 @@ import { contextFromTask, getTask, updateTask, touchTask, recordAgentResponse } 
 import { adapter } from '../app.js';
 import { broadcast, initSSE } from '../events.js';
 import {
+  appendSystemMessage,
+  appendUserMessage,
   applyEvent,
   broadcast as broadcastLive,
   finishRun,
@@ -10,16 +12,20 @@ import {
   getRunContext,
   getRunStatus,
   sendSnapshot,
+  startAssistantMessage,
   startCompactionRun,
+  startGoalRun,
   startRun,
   subscribe,
+  updateRunGoal,
+  updateRunContext,
   updateRunStatus,
 } from '../live-chat.js';
 import { taskRunSettings, parseRunSettingsBody } from '../agent-settings.js';
 import { TASK_AGENT_SYSTEM_PROMPT } from '../prompts/task-agent.js';
-import { toErrorMessage } from '../errors.js';
+import { isRecord, toErrorMessage } from '../errors.js';
 import type { StreamEvent } from '../adapters/types.js';
-import type { CompactResult, ContextUsage, Task } from '../../shared/types.js';
+import { CHAT_RUN_MODES, type ChatRunMode, type CompactResult, type ContextUsage, type GoalStateSnapshot, type Task } from '../../shared/types.js';
 
 export const chatRouter = Router();
 
@@ -42,8 +48,7 @@ function completeTaskRun(
   const updated = updateRunStatus(taskId, status, options);
   if (updated) {
     broadcast({ type: 'task_run_updated', run: updated });
-    const liveRun = getRun(taskId);
-    if (liveRun) broadcastLive(taskId, { type: 'snapshot', run: liveRun });
+    broadcastRunSnapshot(taskId);
   }
   finishRun(taskId, ttlMs, runId);
 }
@@ -78,34 +83,61 @@ chatRouter.get('/:id/session', async (req, res) => {
 
 const DONE_SNAPSHOT_TTL_MS = 30_000;
 const ERROR_SNAPSHOT_TTL_MS = 24 * 60 * 60_000;
+const MAX_GOAL_TURNS = 20;
 
-async function judgeTaskCompletion(task: Task, responseText: string, responseAt: number): Promise<void> {
-  if (!responseText.trim() || task.status !== 'in_progress') return;
-
-  try {
-    const result = await adapter.judgeCompletion(task.title, task.description, responseText);
-    if (result.done) {
-      const current = getTask(task.id);
-      if (
-        !current ||
-        current.status !== 'in_progress' ||
-        current.last_agent_response_at !== responseAt
-      ) {
-        return;
-      }
-
-      const updated = updateTask(task.id, { status: 'in_review' });
-      if (updated) broadcast({ type: 'task_updated', task: updated });
-    }
-  } catch {
-    // Judge failure is non-critical — leave task as-is
-  }
+function parseChatRunMode(body: unknown): ChatRunMode {
+  const record = isRecord(body) ? body : {};
+  const settings = isRecord(record.settings) ? record.settings : {};
+  const mode = settings.mode ?? record.mode ?? 'task';
+  if (CHAT_RUN_MODES.includes(mode as ChatRunMode)) return mode as ChatRunMode;
+  throw new Error(`mode must be one of: ${CHAT_RUN_MODES.join(', ')}`);
 }
 
-async function consumeChatRun(runTask: Task, sessionId: string, content: string, runId: string): Promise<void> {
+function broadcastRunSnapshot(taskId: string): void {
+  const liveRun = getRun(taskId);
+  if (liveRun) broadcastLive(taskId, { type: 'snapshot', run: liveRun });
+}
+
+interface StreamChatTurnResult {
+  responseText: string;
+  sawDone: boolean;
+  context?: ContextUsage | null;
+  hadError: boolean;
+}
+
+function recordCompletedAgentRun(taskId: string, context: ContextUsage | null): Task | undefined {
+  const updated = recordAgentResponse(taskId, Date.now(), context);
+  if (updated && updated.status === 'in_progress') {
+    return updateTask(taskId, { status: 'in_review' });
+  }
+  return updated;
+}
+
+function settleRun(taskId: string, runId: string, context: ContextUsage | null): void {
+  const status = getRunStatus(taskId);
+  if (status) broadcast({ type: 'task_run_updated', run: status });
+
+  if (status?.status === 'done') {
+    const updated = recordCompletedAgentRun(taskId, context);
+    if (updated) broadcast({ type: 'task_updated', task: updated });
+  } else {
+    touchTask(taskId);
+  }
+
+  const ttl = status?.status === 'error' ? ERROR_SNAPSHOT_TTL_MS : DONE_SNAPSHOT_TTL_MS;
+  finishRun(taskId, ttl, runId);
+}
+
+async function streamChatTurn(
+  runTask: Task,
+  sessionId: string,
+  content: string,
+  options: { completeOnDone: boolean; captureResponseText?: boolean },
+): Promise<StreamChatTurnResult> {
   let sawDone = false;
   let doneContext: ContextUsage | null | undefined;
   let responseText = '';
+  let hadError = false;
 
   try {
     const stream = adapter.chatStream(sessionId, content, {
@@ -115,42 +147,111 @@ async function consumeChatRun(runTask: Task, sessionId: string, content: string,
     });
 
     for await (const event of stream) {
-      if (event.type === 'text_delta' && responseText.length < 4200) responseText += event.content ?? '';
+      if (options.captureResponseText && event.type === 'text_delta' && event.content) {
+        responseText += event.content;
+      }
       if (event.type === 'done') {
         sawDone = true;
         doneContext = event.context;
+        if (!options.completeOnDone) {
+          updateRunContext(runTask.id, event.context, event.sessionId);
+          continue;
+        }
+      }
+      if (event.type === 'error') {
+        hadError = true;
       }
       applyEvent(runTask.id, event);
       broadcastLive(runTask.id, event);
     }
   } catch (error) {
+    hadError = true;
     const event: StreamEvent = { type: 'error', error: toErrorMessage(error, 'Hermes chat stream failed') };
     applyEvent(runTask.id, event);
     broadcastLive(runTask.id, event);
-  } finally {
-    let finalRun = getRunStatus(runTask.id);
-    if (!sawDone && finalRun?.status === 'streaming') {
-      const event: StreamEvent = { type: 'done', sessionId };
+  }
+
+  const finalRun = getRunStatus(runTask.id);
+  if (!sawDone && !hadError && finalRun?.status === 'streaming') {
+    if (options.completeOnDone) {
+      const event: StreamEvent = { type: 'done', sessionId, context: doneContext };
       sawDone = true;
       applyEvent(runTask.id, event);
       broadcastLive(runTask.id, event);
-      finalRun = getRunStatus(runTask.id);
-    }
-
-    if (finalRun) broadcast({ type: 'task_run_updated', run: finalRun });
-
-    if (sawDone && finalRun?.status === 'done') {
-      const responseAt = Date.now();
-      const updated = recordAgentResponse(runTask.id, responseAt, doneContext ?? null);
-      if (updated) broadcast({ type: 'task_updated', task: updated });
-
-      void judgeTaskCompletion(runTask, responseText, responseAt);
     } else {
-      touchTask(runTask.id);
+      hadError = true;
+      const event: StreamEvent = { type: 'error', error: 'Hermes chat stream ended before completion' };
+      applyEvent(runTask.id, event);
+      broadcastLive(runTask.id, event);
     }
+  }
 
-    const ttl = finalRun?.status === 'error' ? ERROR_SNAPSHOT_TTL_MS : DONE_SNAPSHOT_TTL_MS;
-    finishRun(runTask.id, ttl, runId);
+  return { responseText, sawDone, context: doneContext, hadError };
+}
+
+async function consumeChatRun(runTask: Task, sessionId: string, content: string, runId: string): Promise<void> {
+  const result = await streamChatTurn(runTask, sessionId, content, { completeOnDone: true });
+  try {
+    settleRun(runTask.id, runId, result.context ?? null);
+  } catch {
+    finishRun(runTask.id, ERROR_SNAPSHOT_TTL_MS, runId);
+  }
+}
+
+async function consumeGoalRun(runTask: Task, sessionId: string, initialContent: string, runId: string): Promise<void> {
+  let finalContext: ContextUsage | null | undefined;
+  let hadError = false;
+  let turnContent: string | null = initialContent;
+  let turnCount = 0;
+
+  try {
+    while (turnContent) {
+      if (++turnCount > MAX_GOAL_TURNS) {
+        appendSystemMessage(runTask.id, 'Goal turn limit reached');
+        broadcastRunSnapshot(runTask.id);
+        break;
+      }
+      appendUserMessage(runTask.id, turnContent);
+      startAssistantMessage(runTask.id);
+
+      const turn = await streamChatTurn(runTask, sessionId, turnContent, {
+        completeOnDone: false,
+        captureResponseText: true,
+      });
+      if (turn.context !== undefined) finalContext = turn.context;
+      const currentRun = getRunStatus(runTask.id);
+      if (turn.hadError || currentRun?.status === 'error') {
+        hadError = true;
+        break;
+      }
+
+      const decision = await adapter.evaluateGoal(sessionId, turn.responseText);
+      let shouldBroadcastSnapshot = false;
+      if (decision.state) {
+        const goalRun = updateRunGoal(runTask.id, decision.state);
+        if (goalRun) broadcast({ type: 'task_run_updated', run: goalRun });
+        shouldBroadcastSnapshot = true;
+      }
+      if (decision.message) {
+        appendSystemMessage(runTask.id, decision.message);
+        shouldBroadcastSnapshot = true;
+      }
+      if (shouldBroadcastSnapshot) broadcastRunSnapshot(runTask.id);
+
+      if (!decision.shouldContinue) break;
+
+      turnContent = decision.continuationPrompt?.trim() ? decision.continuationPrompt : null;
+    }
+  } catch (error) {
+    hadError = true;
+    const event: StreamEvent = { type: 'error', error: toErrorMessage(error, 'Hermes goal loop failed') };
+    applyEvent(runTask.id, event);
+    broadcastLive(runTask.id, event);
+  } finally {
+    if (!hadError && getRunStatus(runTask.id)?.status === 'streaming') {
+      updateRunStatus(runTask.id, 'done', { context: finalContext ?? null });
+    }
+    settleRun(runTask.id, runId, finalContext ?? null);
   }
 }
 
@@ -164,8 +265,10 @@ chatRouter.post('/:id/messages', async (req, res) => {
   }
 
   let runSettings: ReturnType<typeof parseRunSettingsBody>;
+  let mode: ChatRunMode;
   try {
     runSettings = parseRunSettingsBody(req.body);
+    mode = parseChatRunMode(req.body);
   } catch (error) {
     return res.status(400).json({ error: toErrorMessage(error, 'Invalid run settings') });
   }
@@ -198,6 +301,22 @@ chatRouter.post('/:id/messages', async (req, res) => {
   }
 
   const sessionId = runTask.id;
+
+  if (mode === 'goal') {
+    let goalState: GoalStateSnapshot;
+    try {
+      goalState = await adapter.setGoal(sessionId, content);
+    } catch (error) {
+      return res.status(503).json({ error: toErrorMessage(error, 'Could not set Hermes goal') });
+    }
+
+    const { snapshot, state } = startGoalRun(runTask.id, sessionId, goalState);
+    broadcast({ type: 'task_run_updated', run: state });
+    broadcastLive(runTask.id, { type: 'snapshot', run: snapshot });
+    void consumeGoalRun(runTask, sessionId, content, snapshot.runId);
+
+    return res.status(202).json({ runId: snapshot.runId });
+  }
 
   const { snapshot, state } = startRun(runTask.id, sessionId, content);
   broadcast({ type: 'task_run_updated', run: state });

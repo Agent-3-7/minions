@@ -1,18 +1,22 @@
 import { useCallback, useState } from 'react';
 import { useDraggable } from '@dnd-kit/core';
-import { Loader2, MoreHorizontal } from 'lucide-react';
+import { Loader2, MoreHorizontal, Target } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { Task, TaskRunState } from '@shared/types';
-import { timeAgo } from '../lib/format';
+import { goalTurnLabel, timeAgo } from '../lib/format';
 import { isActiveRun } from '../lib/store';
 import { hasUnseenAgentResponse } from '../lib/taskState';
 import { TaskContextMenu } from './TaskContextMenu';
 import { RenameTitle } from './RenameTitle';
 
+const BUSY_LABELS: Record<string, string> = { compact: 'Compacting...', goal: 'Working toward goal...' };
+
 function TaskCardBody({ task, run }: { task: Task; run?: TaskRunState }) {
   const isUnseen = hasUnseenAgentResponse(task);
   const isBusy = !!run && isActiveRun(run);
-  const busyLabel = run?.kind === 'compact' ? 'Compacting...' : 'Working...';
+  const isGoalRun = run?.kind === 'goal' && run.status === 'streaming';
+  const goalLabel = run?.goal ? goalTurnLabel(run.goal.turnsUsed ?? 0, run.goal.maxTurns ?? 0) : null;
+  const busyLabel = (run?.kind && BUSY_LABELS[run.kind]) || 'Working...';
   const timeRowClass = isBusy
     ? 'font-semibold text-zinc-600 dark:text-zinc-300'
     : isUnseen
@@ -39,15 +43,30 @@ function TaskCardBody({ task, run }: { task: Task; run?: TaskRunState }) {
           {task.description}
         </p>
       )}
-      <div
-        className={`mt-3 flex items-center gap-1.5 text-[11px] leading-none ${timeRowClass}`}
-      >
-        {isBusy ? (
-          <Loader2 size={12} className="shrink-0 animate-spin" strokeWidth={2.5} />
-        ) : isUnseen && (
-          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-zinc-700 ring-4 ring-zinc-100 dark:bg-zinc-200 dark:ring-zinc-800" />
+      <div className={`mt-3 flex min-w-0 items-center ${isGoalRun ? 'justify-end' : ''}`}>
+        {isGoalRun ? (
+          <span
+            title={goalLabel ? `Active goal run: ${goalLabel}` : 'Active goal run'}
+            className="inline-flex min-h-[24px] max-w-full shrink-0 items-center gap-2 rounded-full border border-zinc-300 bg-white px-2.5 text-[11px] font-semibold leading-none text-zinc-700 shadow-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
+          >
+            <Target size={14} strokeWidth={2.5} className="shrink-0" />
+            <span className="shrink-0">Goal active</span>
+            {goalLabel && (
+              <span className="min-w-0 truncate font-medium text-zinc-500 dark:text-zinc-400">
+                {goalLabel}
+              </span>
+            )}
+          </span>
+        ) : (
+          <div className={`flex min-w-0 items-center gap-1.5 text-[11px] leading-none ${timeRowClass}`}>
+            {isBusy ? (
+              <Loader2 size={12} className="shrink-0 animate-spin" strokeWidth={2.5} />
+            ) : isUnseen && (
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-zinc-700 ring-4 ring-zinc-100 dark:bg-zinc-200 dark:ring-zinc-800" />
+            )}
+            <span className="truncate">{isBusy ? busyLabel : timeAgo(task.updated_at)}</span>
+          </div>
         )}
-        <span>{isBusy ? busyLabel : timeAgo(task.updated_at)}</span>
       </div>
     </div>
   );

@@ -23,6 +23,18 @@ export function isActiveRun(run: TaskRunState): boolean {
   return run.status === 'streaming' || run.status === 'compacting';
 }
 
+function taskRunEqual(a: TaskRunState | undefined, b: TaskRunState): boolean {
+  if (!a) return false;
+  return (
+    a.runId === b.runId &&
+    a.status === b.status &&
+    a.kind === b.kind &&
+    a.goal?.turnsUsed === b.goal?.turnsUsed &&
+    a.goal?.maxTurns === b.goal?.maxTurns &&
+    a.goal?.status === b.goal?.status
+  );
+}
+
 export const useStore = create<AppState>((set) => ({
   tasks: [],
   taskRuns: new Map<string, TaskRunState>(),
@@ -56,10 +68,7 @@ export const useStore = create<AppState>((set) => ({
       const activeRuns = runs.filter(isActiveRun);
       if (
         activeRuns.length === state.taskRuns.size &&
-        activeRuns.every((run) => {
-          const current = state.taskRuns.get(run.taskId);
-          return current?.runId === run.runId && current.status === run.status && current.kind === run.kind;
-        })
+        activeRuns.every((run) => taskRunEqual(state.taskRuns.get(run.taskId), run))
       ) {
         return state;
       }
@@ -72,7 +81,7 @@ export const useStore = create<AppState>((set) => ({
       const shouldStore = isActiveRun(run);
       if (
         (!shouldStore && !current) ||
-        (shouldStore && current?.runId === run.runId && current.status === run.status && current.kind === run.kind)
+        (shouldStore && taskRunEqual(current, run))
       ) {
         return state;
       }

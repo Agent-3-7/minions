@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo, Fragment } from 'react';
-import { ArrowUp, Loader2, ChevronDown, ChevronRight, Check, Terminal, FileText, FilePenLine, Globe, Code, Wrench, X } from 'lucide-react';
+import { ArrowUp, Loader2, ChevronDown, ChevronRight, Check, Terminal, FileText, FilePenLine, Globe, Code, Wrench, X, Target } from 'lucide-react';
 import { InputToolbar, ContextRing } from './InputToolbar';
 import { MarkdownContent } from './MarkdownContent';
 import { useChat, ToolProgressEvent } from '../hooks/useChat';
@@ -7,7 +7,8 @@ import { useAgentConfig } from '../hooks/useAgentConfig';
 import { handleChatKeyDown } from '../lib/keyboard';
 import { compactTask, type AgentRunSettings } from '../lib/api';
 import { useStore } from '../lib/store';
-import { toErrorMessage } from '../lib/format';
+import { GOAL_MODE_PLACEHOLDER, goalTurnLabel, toErrorMessage } from '../lib/format';
+import type { ChatRunMode, GoalStateSnapshot } from '@shared/types';
 
 interface TaskChatProps {
   taskId: string;
@@ -175,10 +176,32 @@ function QueuedMessageBar({
   );
 }
 
+function GoalRunStatus({ goal }: { goal: GoalStateSnapshot | null | undefined }) {
+  const turnLabel = goal ? goalTurnLabel(goal.turnsUsed ?? 0, goal.maxTurns ?? 0) : null;
+
+  return (
+    <div className={`${CHAT_COLUMN_CLASS} mb-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-800 shadow-sm dark:border-zinc-700 dark:bg-zinc-900/70 dark:text-zinc-100`}>
+      <div className="flex min-w-0 items-center gap-2">
+        <Target size={14} strokeWidth={2.5} className="shrink-0" />
+        <span className="shrink-0 font-semibold">Goal active</span>
+        {turnLabel && (
+          <span className="shrink-0 rounded-full border border-zinc-200 bg-white px-2 py-0.5 font-medium text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
+            {turnLabel}
+          </span>
+        )}
+        <span className="min-w-0 truncate text-zinc-500 dark:text-zinc-400">
+          Hermes will continue if more work remains.
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatProps) {
   const { messages, isStreaming: liveIsStreaming, thinkingContent, activeTools, context, sendMessage, loadMessages } = useChat();
   const taskRun = useStore((s) => s.taskRuns.get(taskId));
   const [input, setInput] = useState('');
+  const [runMode, setRunMode] = useState<ChatRunMode>(initialSettings?.mode ?? 'task');
   const [loadedTaskId, setLoadedTaskId] = useState<string | null>(null);
   const [messageLoadError, setMessageLoadError] = useState(false);
   const [compactInFlight, setCompactInFlight] = useState(false);
@@ -206,7 +229,9 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
   const pendingAutoSendRef = useRef<string | null>(null);
   const pendingRevealRef = useRef(false);
   const queuedMessageRef = useRef<QueuedMessage | null>(null);
-  const runIsStreaming = taskRun?.kind === 'chat' && taskRun.status === 'streaming';
+  const lastGoalStatusRef = useRef<GoalStateSnapshot['status'] | null>(null);
+  const runIsStreaming = (taskRun?.kind === 'chat' || taskRun?.kind === 'goal') && taskRun.status === 'streaming';
+  const isGoalStreaming = taskRun?.kind === 'goal' && taskRun.status === 'streaming';
   const isStreaming = liveIsStreaming || runIsStreaming;
   const isCompacting = taskRun?.kind === 'compact' && taskRun.status === 'compacting';
   const compactionBlocker = isCompacting || compactInFlight;
@@ -224,6 +249,21 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
   }, [queuedMessage]);
 
   useEffect(() => {
+    const goalStatus = taskRun?.kind === 'goal' ? taskRun.goal?.status ?? null : null;
+    const goalCompleted = goalStatus === 'done' || (!goalStatus && lastGoalStatusRef.current === 'done');
+
+    if (goalCompleted) {
+      setRunMode('task');
+      setQueuedMessage((current) => {
+        if (current?.settings.mode !== 'goal') return current;
+        return { ...current, settings: { ...current.settings, mode: 'task' } };
+      });
+    }
+
+    lastGoalStatusRef.current = goalStatus;
+  }, [taskRun?.kind, taskRun?.goal?.status]);
+
+  useEffect(() => {
     let cancelled = false;
     setLoadedTaskId(null);
     setMessageLoadError(false);
@@ -233,7 +273,9 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
     setQueuedMessage(null);
     setQueuedSendError(null);
     setAutoSendingQueuedId(null);
+    setRunMode(startupRef.current.initialSettings?.mode ?? 'task');
     setOutgoingRevealActive(false);
+    lastGoalStatusRef.current = null;
     queuedMessageRef.current = null;
     pendingAutoSendRef.current = null;
     pendingRevealRef.current = false;
@@ -332,7 +374,7 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
     if (!text || configPending) return;
     if (queuedMessage) return;
 
-    const settings = { model, reasoningEffort };
+    const settings = { model, reasoningEffort, mode: isGoalStreaming ? 'task' : runMode };
     if (taskBusyForQueue) {
       setQueuedMessage({
         id: crypto.randomUUID(),
@@ -353,7 +395,7 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
       setOutgoingRevealActive(false);
       setInput(text);
     }
-  }, [configPending, input, queuedMessage, model, reasoningEffort, taskBusyForQueue, sendMessage, taskId]);
+  }, [configPending, input, queuedMessage, model, reasoningEffort, runMode, isGoalStreaming, taskBusyForQueue, sendMessage, taskId]);
 
   const handleCompact = useCallback(async () => {
     if (compactionBlocker || isStreaming) return;
@@ -501,6 +543,7 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
       </div>
 
       <div className="border-t border-zinc-100 px-3 py-3 dark:border-zinc-800 sm:px-6 sm:py-4">
+        {isGoalStreaming && <GoalRunStatus goal={taskRun?.goal} />}
         <div className={`${CHAT_COLUMN_CLASS} rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800 sm:rounded-2xl`}>
           <textarea
             ref={inputRef}
@@ -508,7 +551,7 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             disabled={configPending}
-            placeholder="Message your assistant..."
+            placeholder={runMode === 'goal' ? GOAL_MODE_PLACEHOLDER : 'Message your assistant...'}
             rows={2}
             className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm leading-relaxed text-zinc-900 placeholder-zinc-400 focus:outline-none disabled:opacity-60 dark:text-zinc-100 dark:placeholder-zinc-500 sm:px-5"
           />
@@ -527,11 +570,13 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
             <InputToolbar
               model={model}
               reasoningEffort={reasoningEffort}
+              runMode={runMode}
               defaults={toolbarDefaults}
               modelGroups={modelGroups}
               disabled={isStreaming || compactionBlocker || queuedMessage !== null}
               onModelChange={setModel}
               onReasoningEffortChange={setReasoningEffort}
+              onRunModeChange={setRunMode}
             />
             <div className="flex items-center gap-2">
               {context && (
