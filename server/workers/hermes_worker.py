@@ -46,6 +46,7 @@ from hermes_scheduled_tasks import (
 
 PROTOCOL_OUT = sys.stdout
 PROTOCOL_LOCK = threading.Lock()
+# Keep in sync with MINIONS_GOAL_MAX_TURNS in shared/types.ts.
 MINIONS_GOAL_MAX_TURNS = 20
 
 # Cap on concurrent AIAgent.run_conversation calls.

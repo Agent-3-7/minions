@@ -4,7 +4,7 @@ import { InputToolbar, ContextRing } from './InputToolbar';
 import { MarkdownContent } from './MarkdownContent';
 import { useChat, ToolProgressEvent } from '../hooks/useChat';
 import { useAgentConfig } from '../hooks/useAgentConfig';
-import { handleChatKeyDown } from '../lib/keyboard';
+import { handleChatKeyDown, toggleRunMode } from '../lib/keyboard';
 import { compactTask, type AgentRunSettings } from '../lib/api';
 import { useStore } from '../lib/store';
 import { GOAL_MODE_PLACEHOLDER, goalTurnLabel, toErrorMessage } from '../lib/format';
@@ -428,9 +428,15 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
     void sendQueuedMessage(queuedMessage);
   }, [configPending, queuedIsSending, queuedMessage, sendQueuedMessage, taskBusyForQueue]);
 
+  const goalToggleDisabled = isStreaming || compactionBlocker || queuedMessage !== null;
+  const handleToggleGoalMode = useCallback(() => setRunMode(toggleRunMode), []);
+
   const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => handleChatKeyDown(e, handleSubmit),
-    [handleSubmit],
+    (e: React.KeyboardEvent) => handleChatKeyDown(e, handleSubmit, {
+      onGoalToggle: handleToggleGoalMode,
+      goalToggleDisabled,
+    }),
+    [goalToggleDisabled, handleSubmit, handleToggleGoalMode],
   );
   const isLoadingMessages = loadedTaskId !== taskId;
 
@@ -573,7 +579,7 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
               runMode={runMode}
               defaults={toolbarDefaults}
               modelGroups={modelGroups}
-              disabled={isStreaming || compactionBlocker || queuedMessage !== null}
+              disabled={goalToggleDisabled}
               onModelChange={setModel}
               onReasoningEffortChange={setReasoningEffort}
               onRunModeChange={setRunMode}

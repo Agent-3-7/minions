@@ -25,7 +25,7 @@ import { taskRunSettings, parseRunSettingsBody } from '../agent-settings.js';
 import { TASK_AGENT_SYSTEM_PROMPT } from '../prompts/task-agent.js';
 import { isRecord, toErrorMessage } from '../errors.js';
 import type { StreamEvent } from '../adapters/types.js';
-import { CHAT_RUN_MODES, type ChatRunMode, type CompactResult, type ContextUsage, type GoalStateSnapshot, type Task } from '../../shared/types.js';
+import { CHAT_RUN_MODES, MINIONS_GOAL_MAX_TURNS, type ChatRunMode, type CompactResult, type ContextUsage, type GoalStateSnapshot, type Task } from '../../shared/types.js';
 
 export const chatRouter = Router();
 
@@ -83,7 +83,6 @@ chatRouter.get('/:id/session', async (req, res) => {
 
 const DONE_SNAPSHOT_TTL_MS = 30_000;
 const ERROR_SNAPSHOT_TTL_MS = 24 * 60 * 60_000;
-const MAX_GOAL_TURNS = 20;
 
 function parseChatRunMode(body: unknown): ChatRunMode {
   const record = isRecord(body) ? body : {};
@@ -206,7 +205,7 @@ async function consumeGoalRun(runTask: Task, sessionId: string, initialContent: 
 
   try {
     while (turnContent) {
-      if (++turnCount > MAX_GOAL_TURNS) {
+      if (++turnCount > MINIONS_GOAL_MAX_TURNS) {
         appendSystemMessage(runTask.id, 'Goal turn limit reached');
         broadcastRunSnapshot(runTask.id);
         break;

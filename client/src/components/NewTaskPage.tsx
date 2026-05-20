@@ -4,7 +4,7 @@ import { ArrowUp, Loader2 } from 'lucide-react';
 import { InputToolbar } from './InputToolbar';
 import { createTask } from '../lib/api';
 import { useAgentConfig } from '../hooks/useAgentConfig';
-import { isEditableTarget, handleChatKeyDown } from '../lib/keyboard';
+import { isEditableTarget, handleChatKeyDown, toggleRunMode } from '../lib/keyboard';
 import { GOAL_MODE_PLACEHOLDER } from '../lib/format';
 import type { ChatRunMode } from '@shared/types';
 
@@ -45,9 +45,14 @@ export function NewTaskPage() {
     }
   }, [defaults, input, isCreating, isLoading, model, navigate, reasoningEffort, runMode]);
 
+  const handleToggleGoalMode = useCallback(() => setRunMode(toggleRunMode), []);
+
   const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => handleChatKeyDown(e, handleSubmit),
-    [handleSubmit],
+    (e: React.KeyboardEvent) => handleChatKeyDown(e, handleSubmit, {
+      onGoalToggle: handleToggleGoalMode,
+      goalToggleDisabled: isCreating,
+    }),
+    [handleSubmit, handleToggleGoalMode, isCreating],
   );
 
   return (
@@ -57,7 +62,7 @@ export function NewTaskPage() {
       </h1>
 
       <div className="w-full max-w-2xl">
-        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow-sm overflow-hidden">
+        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow-sm">
           <textarea
             ref={inputRef}
             value={input}

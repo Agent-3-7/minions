@@ -1,8 +1,9 @@
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown, Loader2, Search, Sparkles, Target, Zap, type LucideIcon } from 'lucide-react';
-import { REASONING_EFFORTS, type AgentDefaults, type AgentModelGroup, type ChatRunMode, type ContextUsage, type ReasoningEffort } from '@shared/types';
+import { MINIONS_GOAL_MAX_TURNS, REASONING_EFFORTS, type AgentDefaults, type AgentModelGroup, type ChatRunMode, type ContextUsage, type ReasoningEffort } from '@shared/types';
 import { formatTokenCount } from '../lib/format';
+import { GOAL_MODE_SHORTCUT_LABEL } from '../lib/keyboard';
 
 interface ContextRingProps {
   context: ContextUsage;
@@ -1039,23 +1040,43 @@ function GoalModeToggle({
   onChange: (value: ChatRunMode) => void;
 }) {
   const active = value === 'goal';
+  const tooltipId = useId();
+  const tooltipTitle = active ? 'Goal mode is on' : 'Goal mode';
 
   return (
-    <button
-      type="button"
-      disabled={disabled}
-      aria-pressed={active}
-      aria-label={active ? 'Turn off goal mode' : 'Turn on goal mode'}
-      onClick={() => onChange(active ? 'task' : 'goal')}
-      className={`inline-flex h-9 max-w-full items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-        active
-          ? 'border-zinc-500 bg-zinc-100 text-zinc-950 ring-2 ring-zinc-900/10 hover:bg-zinc-200 dark:border-zinc-400 dark:bg-zinc-700 dark:text-zinc-50 dark:ring-white/10 dark:hover:bg-zinc-600'
-          : 'border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700/70'
-      }`}
-    >
-      <Target size={12} className="shrink-0" strokeWidth={2.5} />
-      <span>Goal</span>
-    </button>
+    <div className="group relative inline-flex">
+      <button
+        type="button"
+        disabled={disabled}
+        aria-pressed={active}
+        aria-describedby={tooltipId}
+        aria-label={`${active ? 'Turn off' : 'Turn on'} goal mode. Shortcut: ${GOAL_MODE_SHORTCUT_LABEL}`}
+        onClick={() => onChange(active ? 'task' : 'goal')}
+        className={`inline-flex h-9 max-w-full items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+          active
+            ? 'border-zinc-500 bg-zinc-100 text-zinc-950 ring-2 ring-zinc-900/10 hover:bg-zinc-200 dark:border-zinc-400 dark:bg-zinc-700 dark:text-zinc-50 dark:ring-white/10 dark:hover:bg-zinc-600'
+            : 'border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700/70'
+        }`}
+      >
+        <Target size={12} className="shrink-0" strokeWidth={2.5} />
+        <span>Goal</span>
+      </button>
+      <div
+        id={tooltipId}
+        role="tooltip"
+        className="pointer-events-none invisible absolute bottom-full left-0 z-50 mb-2.5 w-72 max-w-[calc(100vw-2rem)] translate-y-1 rounded-lg border border-zinc-200 bg-white p-3 text-left opacity-0 shadow-lg transition dark:border-zinc-700 dark:bg-zinc-800 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">{tooltipTitle}</p>
+          <kbd className="shrink-0 rounded-md border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+            {GOAL_MODE_SHORTCUT_LABEL}
+          </kbd>
+        </div>
+        <p className="mt-1.5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+          Keeps Hermes working toward one objective. Hermes checks after each reply and can continue for up to {MINIONS_GOAL_MAX_TURNS} turns, stopping earlier when it finishes.
+        </p>
+      </div>
+    </div>
   );
 }
 
