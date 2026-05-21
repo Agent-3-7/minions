@@ -20,6 +20,7 @@ import type { WorkerEvent, WorkerRequest, WorkerResult, WorkerErrorPayload } fro
 import { expandHomePrefix, resolveHermesHome, resolveMinionsWorkspaceDir } from '../paths.js';
 
 const WORKER_READY_TIMEOUT_MS = 10_000;
+const WORKER_INTERRUPT_TIMEOUT_MS = 10_000;
 
 type WorkerRequestInput = WorkerRequest extends infer Request
   ? Request extends WorkerRequest
@@ -236,13 +237,13 @@ class HermesWorkerClient {
     });
   }
 
-  async request<T extends WorkerResult>(input: WorkerRequest['type'] | WorkerRequestInput): Promise<T> {
+  async request<T extends WorkerResult>(input: WorkerRequest['type'] | WorkerRequestInput, timeoutMs?: number): Promise<T> {
     await this.start();
     const id = randomUUID();
     const request = typeof input === 'string'
       ? { id, type: input } as WorkerRequest
       : { ...input, id } as WorkerRequest;
-    return await this.sendRequest<T>(request);
+    return await this.sendRequest<T>(request, timeoutMs);
   }
 
   async *stream(request: Omit<Extract<WorkerRequest, { type: 'chat' }>, 'id'>): AsyncIterable<WorkerEvent> {
@@ -295,7 +296,7 @@ class HermesWorkerClient {
       if (timeoutMs) {
         timeout = setTimeout(() => {
           this.pending.delete(request.id);
-          reject(new Error(`Hermes worker did not become ready within ${timeoutMs}ms`));
+          reject(new Error(`Hermes worker did not respond within ${timeoutMs}ms`));
         }, timeoutMs);
       }
 
@@ -467,12 +468,22 @@ export class HermesWorkerAdapter implements AgentAdapter {
           yield { type: 'error', error: formatWorkerError(event.error), code: workerErrorCode(event.error) };
           break;
         case 'done':
-          yield { type: 'done', sessionId: event.sessionId ?? sessionId, context: event.context };
+          yield { type: 'done', sessionId: event.sessionId ?? sessionId, context: event.context, interrupted: event.interrupted };
           break;
         case 'result':
           break;
       }
     }
+  }
+
+  async interruptChat(sessionId: string, reason?: string): Promise<boolean> {
+    const result = await this.client.request<{ interrupted: boolean }>({
+      type: 'chat.interrupt',
+      sessionId,
+      taskId: sessionId,
+      reason,
+    }, WORKER_INTERRUPT_TIMEOUT_MS);
+    return result.interrupted;
   }
 
   async healthCheck(): Promise<boolean> {

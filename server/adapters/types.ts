@@ -32,6 +32,7 @@ export interface StreamEvent {
   duration?: number;
   label?: string;
   context?: ContextUsage | null;
+  interrupted?: boolean;
 }
 
 export interface AgentAdapter {
@@ -46,6 +47,8 @@ export interface AgentAdapter {
     message: string,
     options?: AgentRunOptions,
   ): AsyncIterable<StreamEvent>;
+
+  interruptChat(sessionId: string, reason?: string): Promise<boolean>;
 
   healthCheck(): Promise<boolean>;
 

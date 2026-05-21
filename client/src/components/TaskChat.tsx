@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo, Fragment } from 'react';
-import { ArrowUp, Loader2, ChevronDown, ChevronRight, Check, Terminal, FileText, FilePenLine, Globe, Code, Wrench, X, Target } from 'lucide-react';
+import { ArrowUp, Loader2, ChevronDown, ChevronRight, Check, Terminal, FileText, FilePenLine, Globe, Code, Wrench, X, Target, Square } from 'lucide-react';
 import { InputToolbar, ContextRing } from './InputToolbar';
 import { AttachButton, AttachDropOverlay, AttachmentTray, UploadErrorBar } from './ChatAttachments';
 import { MarkdownContent } from './MarkdownContent';
@@ -7,7 +7,7 @@ import { useChat, ToolProgressEvent } from '../hooks/useChat';
 import { useAgentConfig } from '../hooks/useAgentConfig';
 import { useFileAttachments } from '../hooks/useFileAttachments';
 import { handleChatKeyDown, toggleRunMode } from '../lib/keyboard';
-import { compactTask, type AgentRunSettings } from '../lib/api';
+import { ApiError, compactTask, interruptTask, type AgentRunSettings } from '../lib/api';
 import { useStore } from '../lib/store';
 import { GOAL_MODE_PLACEHOLDER, goalTurnLabel, toErrorMessage } from '../lib/format';
 import type { ChatRunMode, GoalStateSnapshot } from '@shared/types';
@@ -200,7 +200,7 @@ function GoalRunStatus({ goal }: { goal: GoalStateSnapshot | null | undefined })
 }
 
 export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatProps) {
-  const { messages, isStreaming: liveIsStreaming, thinkingContent, activeTools, context, sendMessage, loadMessages } = useChat();
+  const { messages, isStreaming: liveIsStreaming, stopped: runStopped, thinkingContent, activeTools, context, sendMessage, loadMessages } = useChat();
   const taskRun = useStore((s) => s.taskRuns.get(taskId));
   const [input, setInput] = useState('');
   const [runMode, setRunMode] = useState<ChatRunMode>(initialSettings?.mode ?? 'task');
@@ -213,6 +213,8 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
   const [queuedSendError, setQueuedSendError] = useState<string | null>(null);
   const [autoSendingQueuedId, setAutoSendingQueuedId] = useState<string | null>(null);
   const [outgoingRevealActive, setOutgoingRevealActive] = useState(false);
+  const [interruptInFlight, setInterruptInFlight] = useState(false);
+  const [interruptError, setInterruptError] = useState<string | null>(null);
   const { pendingFiles, dragOver, uploadError, setUploadError, addFiles, removeFile, clearFiles, submitWithAttachments, dragHandlers, handlePaste } = useFileAttachments();
   const startupRef = useRef({ taskId, initialMessage, initialSettings });
   if (startupRef.current.taskId !== taskId) {
@@ -278,6 +280,8 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
     setAutoSendingQueuedId(null);
     setRunMode(startupRef.current.initialSettings?.mode ?? 'task');
     setOutgoingRevealActive(false);
+    setInterruptInFlight(false);
+    setInterruptError(null);
     setUploadError(null);
     clearFiles();
     lastGoalStatusRef.current = null;
@@ -374,6 +378,18 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
     void sendQueuedMessage(queuedMessage);
   }, [configPending, queuedMessage, queuedSendError, sendQueuedMessage, taskBusyForQueue]);
 
+  useEffect(() => {
+    if (!isStreaming) setInterruptInFlight(false);
+  }, [isStreaming]);
+
+  // Safety net: the spinner normally clears when the stream ends, but if that
+  // signal never arrives (e.g. the live SSE drops) don't leave it stuck forever.
+  useEffect(() => {
+    if (!interruptInFlight) return;
+    const timer = setTimeout(() => setInterruptInFlight(false), 15_000);
+    return () => clearTimeout(timer);
+  }, [interruptInFlight]);
+
   const handleSubmit = useCallback(async () => {
     const text = input.trim();
     const hasFiles = pendingFiles.length > 0;
@@ -425,6 +441,21 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
     }
   }, [compactionBlocker, isStreaming, loadMessages, taskId]);
 
+  const handleInterrupt = useCallback(async () => {
+    if (!isStreaming || interruptInFlight) return;
+    setInterruptInFlight(true);
+    setInterruptError(null);
+    try {
+      await interruptTask(taskId);
+    } catch (error) {
+      // 409 means the run already finished between render and click — nothing to stop, not a failure.
+      if (!(error instanceof ApiError && error.status === 409)) {
+        setInterruptError(toErrorMessage(error, 'Failed to stop Hermes'));
+      }
+      setInterruptInFlight(false);
+    }
+  }, [interruptInFlight, isStreaming, taskId]);
+
   const handleRemoveQueuedMessage = useCallback(() => {
     if (queuedIsSending) return;
     setQueuedMessage(null);
@@ -448,6 +479,22 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
     [goalToggleDisabled, handleSubmit, handleToggleGoalMode],
   );
   const isLoadingMessages = loadedTaskId !== taskId;
+
+  const sendButton = isStreaming
+    ? {
+        onClick: handleInterrupt,
+        disabled: interruptInFlight,
+        label: interruptInFlight ? 'Stopping response' : 'Stop response',
+        icon: interruptInFlight
+          ? <Loader2 size={14} className="animate-spin" />
+          : <Square size={11} fill="currentColor" strokeWidth={0} />,
+      }
+    : {
+        onClick: handleSubmit,
+        disabled: (!input.trim() && pendingFiles.length === 0) || configPending || queuedMessage !== null,
+        label: 'Send message',
+        icon: <ArrowUp size={14} />,
+      };
 
   return (
     <div
@@ -545,6 +592,7 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
                 </Fragment>
               );
             })}
+            {runStopped && <ConversationDivider>Stopped by you</ConversationDivider>}
             {compactInFlight && (
               <ConversationDivider>
                 <span className="inline-flex items-center gap-1.5">
@@ -577,6 +625,7 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
           />
           <AttachmentTray files={pendingFiles} onRemove={removeFile} />
           {uploadError && <UploadErrorBar error={uploadError} onDismiss={() => setUploadError(null)} />}
+          {interruptError && <UploadErrorBar error={interruptError} onDismiss={() => setInterruptError(null)} />}
           {queuedMessage && (
             <QueuedMessageBar
               queuedMessage={queuedMessage}
@@ -613,11 +662,14 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
                 />
               )}
               <button
-                onClick={handleSubmit}
-                disabled={(!input.trim() && pendingFiles.length === 0) || configPending || queuedMessage !== null}
-                className="p-2 rounded-full bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 disabled:opacity-30 hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors"
+                type="button"
+                onClick={sendButton.onClick}
+                disabled={sendButton.disabled}
+                title={sendButton.label}
+                aria-label={sendButton.label}
+                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white transition-colors hover:bg-zinc-700 disabled:opacity-30 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
               >
-                <ArrowUp size={14} />
+                {sendButton.icon}
               </button>
             </div>
           </div>

@@ -229,7 +229,7 @@ export function applyEvent(taskId: string, event: StreamEvent): void {
     if (!assistant.tools) assistant.tools = [];
     mergeToolProgress(assistant.tools, event);
   } else if (event.type === 'done') {
-    if (run.status !== 'error') run.status = 'done';
+    if (run.status !== 'error') run.status = event.interrupted ? 'stopped' : 'done';
     if (event.sessionId) run.sessionId = event.sessionId;
     if (event.context !== undefined) {
       run.context = event.context;
@@ -268,7 +268,7 @@ export function getRunStatuses(): TaskRunState[] {
 
 export function updateRunStatus(
   taskId: string,
-  status: Extract<LiveChatRunStatus, 'done' | 'error'>,
+  status: Extract<LiveChatRunStatus, 'done' | 'error' | 'stopped'>,
   options?: { context?: LiveChatRun['context']; error?: string },
 ): TaskRunState | undefined {
   const run = runs.get(taskId);

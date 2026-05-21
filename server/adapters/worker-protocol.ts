@@ -33,6 +33,7 @@ export type WorkerRequest =
   | { id: string; type: 'goal.resume'; sessionId: string }
   | { id: string; type: 'goal.clear'; sessionId: string }
   | { id: string; type: 'goal.evaluate'; sessionId: string; responseText: string }
+  | { id: string; type: 'chat.interrupt'; taskId?: string; sessionId?: string; reason?: string }
   | {
       id: string;
       type: 'chat';
@@ -75,6 +76,7 @@ export type WorkerResult =
   | { session: SessionMetadata | null }
   | { goal: GoalStateSnapshot | null }
   | { cleared: boolean }
+  | { interrupted: boolean }
   | GoalDecision
   | { title: string }
   | {
@@ -97,5 +99,5 @@ export type WorkerEvent =
       duration?: number;
       label?: string | null;
     }
-  | { id: string; type: 'done'; sessionId?: string; context?: ContextUsage | null }
+  | { id: string; type: 'done'; sessionId?: string; context?: ContextUsage | null; interrupted?: boolean }
   | { id: string; type: 'error'; error: string | WorkerErrorPayload };

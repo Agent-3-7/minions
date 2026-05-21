@@ -53,7 +53,10 @@ MINIONS_GOAL_MAX_TURNS = 20
 AGENT_RUN_LIMIT = int(os.environ.get("HERMES_AGENT_RUN_LIMIT", "10"))
 AGENT_SEMAPHORE = threading.BoundedSemaphore(AGENT_RUN_LIMIT)
 ACTIVE_TASKS: dict[str, str] = {}
+ACTIVE_AGENTS: dict[str, Any] = {}
+PENDING_INTERRUPTS: dict[str, str] = {}
 ACTIVE_TASKS_LOCK = threading.Lock()
+DEFAULT_INTERRUPT_REASON = "Stopped by user"
 
 ALLOWED_REASONING = {"none", "minimal", "low", "medium", "high", "xhigh"}
 KNOWN_PROVIDER_PREFIXES = {
@@ -441,10 +444,51 @@ def _try_mark_task_active(task_key: str, request_id: str) -> bool:
         return True
 
 
+def _try_interrupt_agent(agent: Any, reason: str) -> bool:
+    if agent is not None and hasattr(agent, "interrupt"):
+        agent.interrupt(reason)
+        return True
+    return False
+
+
+def _register_active_agent(task_key: str, request_id: str, agent: Any) -> None:
+    pending_reason = None
+    with ACTIVE_TASKS_LOCK:
+        if ACTIVE_TASKS.get(task_key) != request_id:
+            return
+        ACTIVE_AGENTS[task_key] = agent
+        pending_reason = PENDING_INTERRUPTS.pop(task_key, None)
+
+    # An interrupt that arrived before this agent was constructed was parked in
+    # PENDING_INTERRUPTS; apply it now that the agent exists.
+    if pending_reason:
+        _try_interrupt_agent(agent, pending_reason)
+
+
 def _clear_task_active(task_key: str, request_id: str) -> None:
     with ACTIVE_TASKS_LOCK:
         if ACTIVE_TASKS.get(task_key) == request_id:
             ACTIVE_TASKS.pop(task_key, None)
+            ACTIVE_AGENTS.pop(task_key, None)
+            PENDING_INTERRUPTS.pop(task_key, None)
+
+
+def _interrupt_active_chat(request: dict[str, Any]) -> dict[str, bool]:
+    task_key = _task_key_for(request)
+    reason = string_or_none(request.get("reason")) or DEFAULT_INTERRUPT_REASON
+
+    with ACTIVE_TASKS_LOCK:
+        if task_key not in ACTIVE_TASKS:
+            return {"interrupted": False}
+
+        agent = ACTIVE_AGENTS.get(task_key)
+        if agent is None:
+            # The run is active but its agent isn't registered yet. Park the reason
+            # so _register_active_agent applies it the moment the agent is created.
+            PENDING_INTERRUPTS[task_key] = reason
+            return {"interrupted": True}
+
+    return {"interrupted": _try_interrupt_agent(agent, reason)}
 
 
 def _custom_providers(cfg: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1193,6 +1237,7 @@ def _run_chat(request_id: str, request: dict[str, Any]) -> None:
             "tool_progress_callback": on_tool_progress,
         },
     )
+    _register_active_agent(_task_key_for(request), request_id, agent)
     _sync_session_identity(agent, session_id)
     task_id = string_or_none(request.get("taskId")) or session_id
     task_title = string_or_none(request.get("taskTitle")) or task_id
@@ -1224,6 +1269,17 @@ def _run_chat(request_id: str, request: dict[str, Any]) -> None:
                 clear_session_vars(session_tokens)
             except Exception:
                 pass
+
+    if result.get("interrupted"):
+        # User-initiated stop: end the turn cleanly (the partial reply is already
+        # streamed and persisted by run_conversation) rather than as an error.
+        _send({
+            "id": request_id,
+            "type": "done",
+            "sessionId": getattr(agent, "session_id", None) or session_id,
+            "interrupted": True,
+        })
+        return
 
     final_text = str(result.get("final_response") or "")
     failure_message = _agent_failure_message(final_text)
@@ -1509,6 +1565,8 @@ def _handle_request(request: dict[str, Any]) -> None:
             _result(request_id, _goal_clear(request))
         elif request_type == "goal.evaluate":
             _submit_background_agent_request(request_id, request, name_prefix="goal", handler=_goal_evaluate)
+        elif request_type == "chat.interrupt":
+            _result(request_id, _interrupt_active_chat(request))
         elif request_type == "chat":
             _submit_chat_request(request_id, request)
         elif request_type == "session.compress":

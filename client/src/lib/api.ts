@@ -153,6 +153,13 @@ export function compactTask(taskId: string, focusTopic?: string | null) {
   });
 }
 
+export function interruptTask(taskId: string, reason?: string) {
+  return request<{ interrupted: boolean }>(`/tasks/${taskId}/interrupt`, {
+    method: 'POST',
+    body: JSON.stringify(reason ? { reason } : {}),
+  });
+}
+
 export function fetchScheduledTasks(includeDisabled = true) {
   return request<{ scheduledTasks: ScheduledTask[] }>(`/scheduled-tasks?includeDisabled=${includeDisabled ? 'true' : 'false'}`);
 }

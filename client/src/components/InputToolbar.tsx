@@ -70,14 +70,15 @@ export function ContextRing({ context, onCompact, compacting = false, compactDis
   }, [compactDisabled, compacting, onCompact]);
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className="relative h-8 w-8 shrink-0">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="relative w-[26px] h-[26px] group cursor-pointer"
+        className="relative flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-700/70"
         title={`Context: ${pct}% used`}
+        aria-label={`Context: ${pct}% used`}
       >
-        <svg width={size} height={size} className="-rotate-90">
+        <svg width={size} height={size} className="-rotate-90 shrink-0">
           <circle
             cx={size / 2}
             cy={size / 2}

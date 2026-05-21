@@ -51,7 +51,7 @@ export interface ToolProgressEvent {
 }
 
 export type TaskRunKind = 'chat' | 'goal' | 'compact';
-export type LiveChatRunStatus = 'streaming' | 'compacting' | 'done' | 'error';
+export type LiveChatRunStatus = 'streaming' | 'compacting' | 'done' | 'error' | 'stopped';
 
 export interface TaskRunState {
   taskId: string;

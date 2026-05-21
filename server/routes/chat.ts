@@ -38,6 +38,10 @@ function isTaskRunActive(status: ReturnType<typeof getRunStatus>): boolean {
   return status?.status === 'streaming' || status?.status === 'compacting';
 }
 
+function isInterruptibleRun(status: ReturnType<typeof getRunStatus>): boolean {
+  return status?.status === 'streaming' && (status.kind === 'chat' || status.kind === 'goal');
+}
+
 function completeTaskRun(
   taskId: string,
   runId: string,
@@ -102,6 +106,9 @@ interface StreamChatTurnResult {
   sawDone: boolean;
   context?: ContextUsage | null;
   hadError: boolean;
+  // Only consumed by the goal loop; the chat path learns it stopped via the
+  // `done` event reaching applyEvent (completeOnDone=true sets status 'stopped').
+  interrupted: boolean;
 }
 
 function recordCompletedAgentRun(taskId: string, context: ContextUsage | null): Task | undefined {
@@ -137,6 +144,7 @@ async function streamChatTurn(
   let doneContext: ContextUsage | null | undefined;
   let responseText = '';
   let hadError = false;
+  let interrupted = false;
 
   try {
     const stream = adapter.chatStream(sessionId, content, {
@@ -152,6 +160,7 @@ async function streamChatTurn(
       if (event.type === 'done') {
         sawDone = true;
         doneContext = event.context;
+        if (event.interrupted) interrupted = true;
         if (!options.completeOnDone) {
           updateRunContext(runTask.id, event.context, event.sessionId);
           continue;
@@ -185,7 +194,7 @@ async function streamChatTurn(
     }
   }
 
-  return { responseText, sawDone, context: doneContext, hadError };
+  return { responseText, sawDone, context: doneContext, hadError, interrupted };
 }
 
 async function consumeChatRun(runTask: Task, sessionId: string, content: string, runId: string): Promise<void> {
@@ -200,6 +209,7 @@ async function consumeChatRun(runTask: Task, sessionId: string, content: string,
 async function consumeGoalRun(runTask: Task, sessionId: string, initialContent: string, runId: string): Promise<void> {
   let finalContext: ContextUsage | null | undefined;
   let hadError = false;
+  let wasInterrupted = false;
   let turnContent: string | null = initialContent;
   let turnCount = 0;
 
@@ -207,7 +217,6 @@ async function consumeGoalRun(runTask: Task, sessionId: string, initialContent: 
     while (turnContent) {
       if (++turnCount > MINIONS_GOAL_MAX_TURNS) {
         appendSystemMessage(runTask.id, 'Goal turn limit reached');
-        broadcastRunSnapshot(runTask.id);
         break;
       }
       appendUserMessage(runTask.id, turnContent);
@@ -221,6 +230,10 @@ async function consumeGoalRun(runTask: Task, sessionId: string, initialContent: 
       const currentRun = getRunStatus(runTask.id);
       if (turn.hadError || currentRun?.status === 'error') {
         hadError = true;
+        break;
+      }
+      if (turn.interrupted) {
+        wasInterrupted = true;
         break;
       }
 
@@ -248,8 +261,12 @@ async function consumeGoalRun(runTask: Task, sessionId: string, initialContent: 
     broadcastLive(runTask.id, event);
   } finally {
     if (!hadError && getRunStatus(runTask.id)?.status === 'streaming') {
-      updateRunStatus(runTask.id, 'done', { context: finalContext ?? null });
+      updateRunStatus(runTask.id, wasInterrupted ? 'stopped' : 'done', { context: finalContext ?? null });
     }
+    // Goal-turn `done` events are swallowed (completeOnDone=false), so the live
+    // channel never sees the terminal status — push a final snapshot for it. The
+    // error path already delivered a terminal `error` event, so skip it there.
+    if (!hadError) broadcastRunSnapshot(runTask.id);
     settleRun(runTask.id, runId, finalContext ?? null);
   }
 }
@@ -323,6 +340,29 @@ chatRouter.post('/:id/messages', async (req, res) => {
   void consumeChatRun(runTask, sessionId, content, snapshot.runId);
 
   res.status(202).json({ runId: snapshot.runId });
+});
+
+chatRouter.post('/:id/interrupt', async (req, res) => {
+  const task = getTask(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+
+  if (!isInterruptibleRun(getRunStatus(task.id))) {
+    return res.status(409).json({ error: 'This task has no active message to stop' });
+  }
+
+  const reason = typeof req.body?.reason === 'string' && req.body.reason.trim()
+    ? req.body.reason.trim()
+    : undefined;
+
+  try {
+    const interrupted = await adapter.interruptChat(task.id, reason);
+    if (!interrupted) {
+      return res.status(409).json({ error: 'Hermes had no active agent to stop for this task' });
+    }
+    res.json({ interrupted: true });
+  } catch (error) {
+    res.status(503).json({ error: toErrorMessage(error, 'Could not stop Hermes run') });
+  }
 });
 
 chatRouter.post('/:id/compact', async (req, res) => {

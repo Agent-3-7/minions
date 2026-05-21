@@ -36,7 +36,7 @@ type LiveEvent =
       duration?: number;
       label?: string;
     }
-  | { type: 'done'; sessionId?: string; context?: ContextUsage | null }
+  | { type: 'done'; sessionId?: string; context?: ContextUsage | null; interrupted?: boolean }
   | { type: 'error'; error?: string };
 
 function compactSettings(settings?: AgentRunSettings): AgentRunSettings | undefined {
@@ -155,6 +155,7 @@ function messagesWithLiveRun(committed: ChatMessage[], run: LiveChatRun): ChatMe
 export function useChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [stopped, setStopped] = useState(false);
   const [thinkingContent, setThinkingContent] = useState('');
   const [activeTools, setActiveTools] = useState<ToolProgressEvent[]>([]);
   const [context, setContext] = useState<ContextUsage | null>(null);
@@ -194,6 +195,7 @@ export function useChat() {
 
       setMessages(merged);
       setIsStreaming(streaming);
+      setStopped(isMessageRun && liveRun.status === 'stopped');
       setThinkingContent(streaming ? assistant?.thinking ?? '' : '');
       setActiveTools(streaming ? assistant?.tools?.map((t) => ({ ...t })) ?? [] : []);
       setContext(liveRun.context !== undefined ? liveRun.context : liveContextRef.current);
@@ -202,6 +204,7 @@ export function useChat() {
 
     setMessages(committed);
     setIsStreaming(false);
+    setStopped(false);
     setThinkingContent('');
     setActiveTools([]);
     setContext(liveContextRef.current);
@@ -278,7 +281,7 @@ export function useChat() {
 
     if (event.type === 'done') {
       if (event.sessionId) run.sessionId = event.sessionId;
-      if (run.status !== 'error') run.status = 'done';
+      if (run.status !== 'error') run.status = event.interrupted ? 'stopped' : 'done';
       if (event.context !== undefined) {
         run.context = event.context;
         liveContextRef.current = event.context;
@@ -322,6 +325,7 @@ export function useChat() {
     liveContextRef.current = null;
     setMessages([]);
     setIsStreaming(false);
+    setStopped(false);
     setThinkingContent('');
     setActiveTools([]);
     setContext(null);
@@ -400,5 +404,5 @@ export function useChat() {
     teardown();
   }, [teardown]);
 
-  return { messages, isStreaming, thinkingContent, activeTools, context, sendMessage, loadMessages, reset: clearAllState };
+  return { messages, isStreaming, stopped, thinkingContent, activeTools, context, sendMessage, loadMessages, reset: clearAllState };
 }
