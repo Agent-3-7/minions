@@ -11,6 +11,7 @@ import {
 } from 'react';
 import {
   AlertCircle,
+  ArrowLeft,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
@@ -94,6 +95,7 @@ export function FileBrowserPage() {
   const isDirty = openFile ? content !== openFile.content : false;
   const selectedPath = selectedEntry?.path ?? null;
   const downloadTargetPath = selectedEntry?.path ?? directory?.path ?? null;
+  const breadcrumbLabel = parentBreadcrumbLabel(directory);
   const inlineNameKey = inlineName
     ? inlineName.mode === 'rename'
       ? `rename:${inlineName.entry.path}`
@@ -465,14 +467,6 @@ export function FileBrowserPage() {
     setInlineName({ ...inlineName, name, error: null });
   }
 
-  let editorStatus: string | null = null;
-  if (openFile) {
-    if (saving) editorStatus = 'Saving';
-    else if (conflict) editorStatus = 'Changed on disk';
-    else if (isDirty) editorStatus = 'Unsaved';
-    else editorStatus = 'Saved';
-  }
-
   const statusText = statusTextFor({
     count: directory?.entries.length ?? 0,
     selectedEntry,
@@ -501,6 +495,7 @@ export function FileBrowserPage() {
         />
 
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-zinc-300 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+          {!openFile && (
           <div className="grid min-h-[52px] grid-cols-[auto_minmax(140px,1fr)_auto] items-center gap-2 border-b border-zinc-300 bg-gradient-to-b from-zinc-50 to-zinc-200/80 px-3 py-2 dark:border-zinc-800 dark:from-zinc-900 dark:to-zinc-900/80">
             <div className="flex items-center gap-1">
               <ToolbarIconButton
@@ -601,6 +596,7 @@ export function FileBrowserPage() {
               </ToolbarIconButton>
             </div>
           </div>
+          )}
 
           {(error || (!openFile && fileError)) && (
             <div className="flex items-center gap-2 border-b border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
@@ -613,11 +609,11 @@ export function FileBrowserPage() {
             <EditorView
               file={openFile}
               content={content}
-              status={editorStatus}
               error={fileError}
               dirty={isDirty}
               conflict={conflict}
               saving={saving}
+              parentLabel={breadcrumbLabel}
               onContentChange={setContent}
               onBack={handleCloseEditor}
               onDiscard={() => void handleDiscard()}
@@ -988,11 +984,11 @@ function InlineEntryRow({
 function EditorView({
   file,
   content,
-  status,
   error,
   dirty,
   conflict,
   saving,
+  parentLabel,
   onContentChange,
   onBack,
   onDiscard,
@@ -1000,70 +996,104 @@ function EditorView({
 }: {
   file: FileReadResponse;
   content: string;
-  status: string | null;
   error: string | null;
   dirty: boolean;
   conflict: boolean;
   saving: boolean;
+  parentLabel: string;
   onContentChange: (content: string) => void;
   onBack: () => void;
   onDiscard: () => void;
   onSave: () => void;
 }) {
+  const saveRef = useRef(onSave);
+  const canSaveRef = useRef(dirty && !saving);
+  saveRef.current = onSave;
+  canSaveRef.current = dirty && !saving;
+
+  useEffect(() => {
+    const handler = (event: globalThis.KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        if (canSaveRef.current) saveRef.current();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-zinc-950">
-      <div className="flex min-h-[56px] items-center justify-between gap-3 border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
-        <div className="flex min-w-0 items-center gap-3">
-          <button
-            type="button"
-            aria-label="Close file"
-            onClick={onBack}
-            title="Close file"
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-          >
-            <X size={18} />
-          </button>
-          <div className="min-w-0">
-            <h2
+      <div className="flex items-start justify-between gap-4 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+        <div className="min-w-0">
+          <nav className="flex items-center gap-1 text-sm">
+            <button
+              type="button"
+              onClick={onBack}
+              aria-label={`Back to ${parentLabel}`}
+              title={`Back to ${parentLabel}`}
+              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 font-medium text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+            >
+              <ArrowLeft size={14} />
+              {parentLabel}
+            </button>
+            <span className="text-zinc-400 dark:text-zinc-600">/</span>
+            {dirty && !conflict && (
+              <span className="text-amber-600 dark:text-amber-400">•</span>
+            )}
+            <span
               title={file.displayPath}
-              className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100"
+              className="min-w-0 truncate px-1 font-semibold text-zinc-900 dark:text-zinc-100"
             >
               {file.name}
-            </h2>
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {status && (
-            <span className="rounded-md bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-              {status}
             </span>
-          )}
-          <button
-            type="button"
-            onClick={onDiscard}
-            disabled={!dirty || saving}
-            title="Discard changes"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 transition-colors hover:bg-zinc-50 hover:text-zinc-900 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-          >
-            <RotateCcw size={14} />
-          </button>
+          </nav>
+          <p className="ml-2 mt-1 truncate text-xs text-zinc-500 dark:text-zinc-500">
+            {formatBytes(file.size)} · {formatDate(file.modifiedAt)} · {file.encoding}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2 pt-0.5">
+          {conflict ? (
+            <span className="rounded-md bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+              Changed on disk
+            </span>
+          ) : dirty && !saving ? (
+            <>
+              <span className="rounded-md bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                Unsaved
+              </span>
+              <button
+                type="button"
+                onClick={onDiscard}
+                title="Discard changes"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+              >
+                <RotateCcw size={14} />
+              </button>
+            </>
+          ) : null}
           <button
             type="button"
             onClick={onSave}
             disabled={!dirty || saving}
+            title="Save (⌘S)"
             className="inline-flex h-8 items-center gap-2 rounded-lg bg-zinc-900 px-3 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
           >
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
             {conflict ? 'Overwrite' : 'Save'}
           </button>
+          <span className="mx-1 h-6 w-px bg-zinc-200 dark:bg-zinc-700" />
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Close file"
+            title="Close file"
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 shadow-sm transition-colors hover:bg-zinc-50 hover:text-zinc-950 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+          >
+            <X size={14} />
+            Close
+          </button>
         </div>
-      </div>
-
-      <div className="flex items-center justify-between gap-3 border-b border-zinc-200 px-4 py-2 text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-        <span className="min-w-0 truncate">
-          {formatBytes(file.size)} - {formatDate(file.modifiedAt)}
-        </span>
-        <span className="shrink-0">{file.encoding}</span>
       </div>
 
       {error && (
@@ -1318,3 +1348,11 @@ function isSameOrChildPath(parentPath: string, childPath: string): boolean {
   const prefix = parentPath.endsWith('/') ? parentPath : `${parentPath}/`;
   return childPath.startsWith(prefix);
 }
+
+function parentBreadcrumbLabel(directory: FileListResponse | null): string {
+  if (!directory) return 'Files';
+  if (directory.path === WORKSPACE_ROOT) return 'Workspace';
+  const segments = directory.path.split('/').filter(Boolean);
+  return segments[segments.length - 1] ?? 'Workspace';
+}
+
