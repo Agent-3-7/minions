@@ -33,7 +33,8 @@ function AppShell() {
             <Route path="/scheduled-tasks/:scheduledTaskId/runs" element={<ScheduledTasksPage />} />
             <Route path="/scheduled-tasks/:scheduledTaskId/runs/:runId" element={<ScheduledTasksPage />} />
             <Route path="/scheduled-tasks/:scheduledTaskId" element={<ScheduledTasksPage />} />
-            <Route path="/skills" element={<SkillsPage />} />
+            <Route path="/skills" element={<Navigate to="/skills/browse" replace />} />
+            <Route path="/skills/:tab" element={<SkillsPage />} />
             <Route path="/files" element={<FileBrowserPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>

@@ -296,3 +296,49 @@ export interface FileUploadResponse {
   uploaded: number;
   entries: FileEntry[];
 }
+
+export interface SkillMeta {
+  id: string;
+  name: string;
+  description: string;
+  key: string;
+  source: string;
+  provider?: string;
+  registrySlug?: string;
+  version?: string;
+  installedAt?: string;
+}
+
+export interface SkillInstallResult {
+  skill: SkillMeta;
+  installed: boolean;
+  alreadyInstalled?: boolean;
+  hermesExternalDirConfigured: boolean;
+  hermesConfigChanged?: boolean;
+  skillsDir?: string;
+}
+
+export interface ClawHubStats {
+  installsAllTime?: number;
+  downloads?: number;
+  installsCurrent?: number;
+  stars?: number;
+}
+
+export interface ClawHubSkillSummary {
+  slug: string;
+  displayName: string;
+  summary: string;
+  version?: string | null;
+  /** The latest published version string, when known. */
+  latestVersion?: string | null;
+  updatedAt?: number | null;
+  stats?: ClawHubStats | null;
+}
+
+export interface ClawHubScanResult {
+  security?: {
+    status?: string;
+    hasWarnings?: boolean;
+  };
+}

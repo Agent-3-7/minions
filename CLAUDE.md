@@ -52,6 +52,7 @@ All persistent state lives under `MINIONS_HOME` (default: `~/.minions/`):
 - `data/minions.db` — SQLite database
 - `logs/` — log files
 - `workspace/` — default working directory for Hermes task artifacts
+- `skills/` — installed skills, registered with Hermes via `external_dirs`
 
 ## Key Design Decisions
 
@@ -76,7 +77,7 @@ All persistent state lives under `MINIONS_HOME` (default: `~/.minions/`):
 - **Disconnect resilience**: If the browser disconnects during a stream, the server continues draining the worker stream to completion. On successful completion, `last_agent_response_at` is recorded for the task.
 - **Scheduled Tasks**: Hermes manages the underlying cron job state internally. Minions exposes `/api/scheduled-tasks` endpoints to list, create, edit, pause, resume, trigger, remove, and read local output files. Scheduled tasks are standalone; Minions no longer links them to task IDs.
 - **File browser**: `server/routes/files.ts` exposes CRUD operations on the `MINIONS_HOME/workspace/` directory (list, read, write, create, rename, delete, upload via multer). The client's `FileBrowserPage` provides a full file manager UI.
-- **Skills**: `server/routes/skills.ts` backs the client's `SkillsPage`. It returns an empty list for now — nothing is bundled (install/upload is planned).
+- **Skills**: `server/routes/skills.ts` backs the client's `SkillsPage`. Skills install under `MINIONS_HOME/skills/`, and that directory is registered as a Hermes `external_dirs` entry in `~/.hermes/config.yaml` (edited via the `yaml` library, idempotently) so agent runs load them. Two install sources: the ClawHub registry (`POST /skills/install` by slug — downloads files, verifies SHA-256 checksums, writes a `.minions-skill.json` sidecar with provider/version/source metadata) and local folder/`.zip` import (`POST /skills/import`, multipart via multer). ClawHub browsing is server-proxied through `GET /skills/registry/{search,browse,:slug/content,:slug/scan}` — the client never calls `clawhub.ai` directly. Other endpoints: `GET /skills` (list installed), `GET /skills/:id/content`, `DELETE /skills/:id`. Skills are pure Node + filesystem + HTTP — they do not go through the Python worker.
 - **Server imports**: Use `.js` extensions in import paths (ESM with tsx).
 
 ## Task State Machine
@@ -165,7 +166,8 @@ The Python worker communicates via JSONL (one JSON object per line) over stdin/s
 | `/tasks/:taskId` | `TaskDetailPage` | Task detail + chat thread |
 | `/scheduled-tasks` | `ScheduledTasksPage` | Create and manage recurring Hermes scheduled tasks |
 | `/cron` | redirect | Browser bookmark redirect to `/scheduled-tasks` |
-| `/skills` | `SkillsPage` | Browse bundled skill definitions |
+| `/skills` | redirect | Redirects to `/skills/browse` |
+| `/skills/:tab` | `SkillsPage` | Browse the ClawHub registry or manage installed skills (`browse` / `installed` tab) |
 | `/files` | `FileBrowserPage` | File manager for workspace directory |
 | `/settings` | `SettingsPage` | Theme, default model + reasoning effort |
 

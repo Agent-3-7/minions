@@ -132,8 +132,8 @@ export function Sidebar() {
         <SidebarLink
           icon={<Sparkles size={18} />}
           label="Skills"
-          to="/skills"
-          active={isActive('/skills')}
+          to="/skills/browse"
+          active={location.pathname === '/skills' || location.pathname.startsWith('/skills/')}
           collapsed={desktopCollapsed}
         />
         <SidebarLink
