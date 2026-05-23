@@ -4,12 +4,14 @@ import { createServer, type Server } from 'node:http';
 import app, { adapter } from './app.js';
 import { mountFrontend, type FrontendCleanup } from './frontend.js';
 import { ensureHermesExternalSkillsDir } from './routes/skills.js';
+import { attachTerminalWebSocket } from './terminal.js';
 
 const PORT = parseInt(process.env.PORT || '6969', 10);
 const PORT_FALLBACK_ATTEMPTS = 20;
 
 const httpServer = createServer(app);
 let closeFrontend: FrontendCleanup = () => {};
+let closeTerminal: () => Promise<void> | void = () => {};
 let shuttingDown = false;
 
 type ShutdownReason = NodeJS.Signals | 'startup-error';
@@ -59,6 +61,7 @@ async function main() {
   });
 
   closeFrontend = await mountFrontend(app, httpServer);
+  closeTerminal = attachTerminalWebSocket(httpServer);
   try {
     await adapter.start();
   } catch (error) {
@@ -104,6 +107,7 @@ async function shutdown(reason: ShutdownReason, exitCode = 0): Promise<void> {
   const results = await Promise.allSettled([
     closeHttpServer(),
     closeFrontend(),
+    closeTerminal(),
     adapter.stop(),
   ]);
 

@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
-import { SquarePen, Columns3, Settings, PanelLeftClose, PanelLeft, Repeat, Sparkles, Folder } from 'lucide-react';
+import { SquarePen, Columns3, Settings, PanelLeftClose, PanelLeft, Repeat, Sparkles, Folder, TerminalSquare } from 'lucide-react';
 import { useStore } from '../lib/store';
 import { isEditableTarget } from '../lib/keyboard';
 
@@ -31,7 +31,7 @@ export function Sidebar() {
       if (chordKey === 'g') {
         chordKey = null;
         if (chordTimeout) clearTimeout(chordTimeout);
-        const routes: Record<string, string> = { t: '/', f: '/files' };
+        const routes: Record<string, string> = { t: '/', f: '/files', x: '/terminal' };
         if (routes[key]) {
           e.preventDefault();
           navigate(routes[key]);
@@ -121,6 +121,14 @@ export function Sidebar() {
           active={isActive('/files')}
           collapsed={desktopCollapsed}
           shortcut={['G', 'F']}
+        />
+        <SidebarLink
+          icon={<TerminalSquare size={18} />}
+          label="Terminal"
+          to="/terminal"
+          active={isActive('/terminal')}
+          collapsed={desktopCollapsed}
+          shortcut={['G', 'X']}
         />
         <SidebarLink
           icon={<Repeat size={18} />}

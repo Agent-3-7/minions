@@ -13,6 +13,16 @@ export const CHAT_RUN_MODES = ['task', 'goal'] as const;
 export type ChatRunMode = (typeof CHAT_RUN_MODES)[number];
 export const MINIONS_GOAL_MAX_TURNS = 20;
 
+export const TERMINAL_WS_PATH = '/api/terminal';
+
+export type TerminalClientMessage =
+  | { type: 'input'; data: string }
+  | { type: 'resize'; cols: number; rows: number };
+
+export type TerminalServerMessage =
+  | { type: 'exit'; exitCode: number; signal: number | null }
+  | { type: 'error'; message: string };
+
 export interface AgentRunSettings {
   model?: string | null;
   reasoningEffort?: ReasoningEffort | null;
