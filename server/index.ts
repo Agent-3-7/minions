@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import './logging.js';
 import './db/index.js';
 import { createServer, type Server } from 'node:http';
 import app, { adapter } from './app.js';
