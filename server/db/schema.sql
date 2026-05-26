@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   description       TEXT,
   status            TEXT NOT NULL DEFAULT 'in_progress',
   agent_model       TEXT,
+  agent_provider    TEXT,
   reasoning_effort  TEXT,
   created_at        INTEGER NOT NULL,
   updated_at        INTEGER NOT NULL,

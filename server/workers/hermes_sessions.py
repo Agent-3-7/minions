@@ -1,4 +1,4 @@
-"""Project Hermes SessionDB rows into the shape Minions consumes.
+"""Project Hermes SessionDB rows into the shape AgentControl consumes.
 
 Owns transcript sanitization for replay-as-conversation, message projection
 for the chat UI, and session metadata projection for cost/token displays.
@@ -180,7 +180,7 @@ def _content_to_text(content: Any) -> str:
     return str(content)
 
 
-def _strip_minions_user_scaffold(content: str) -> str:
+def _strip_agentcontrol_user_scaffold(content: str) -> str:
     stripped = content.lstrip()
     if stripped.startswith("[TASK AGENT]"):
         marker = "[TASK DESCRIPTION]"
@@ -260,7 +260,7 @@ def project_session_messages(session_id: Any, task_id: Any = None) -> dict[str, 
 
             content = _content_to_text(row.get("content"))
             if role == "user":
-                content = _strip_minions_user_scaffold(content)
+                content = _strip_agentcontrol_user_scaffold(content)
                 if _is_compaction_reference(content):
                     projected.append({
                         "id": f"hermes:{lineage_session_id}:compaction:{row.get('id')}",

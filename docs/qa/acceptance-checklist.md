@@ -1,25 +1,25 @@
-# QA Acceptance Checklist — Jarvis Mission Control
+# QA Acceptance Checklist — AgentControl
 
 Verified on: 2026-05-26 12:32 CEST
-Branch: `kanban/jmc-jarvis-cards`
+Branch: `kanban/agentcontrol-cards`
 Repository: `rewasa/jarvis-mission-control`
 Local path: `/Users/renatowasescha/GIT/jarvis-mission-control`
 
 ## Summary
 
-The consolidated Jarvis Mission Control branch passes build and local API smoke verification. Cloudflare Tunnel routing is configured and protected by Cloudflare Access. iOS compatibility has code-level and production-build evidence; final physical-device Safari execution remains a manual acceptance step.
+The consolidated AgentControl branch passes build and local API smoke verification. Cloudflare Tunnel routing is configured and protected by Cloudflare Access. iOS compatibility has code-level and production-build evidence; final physical-device Safari execution remains a manual acceptance step.
 
 ## Acceptance Criteria
 
 | Criterion | Status | Evidence |
 |---|---:|---|
 | Repo forked and available | ✅ Verified | `origin=https://github.com/rewasa/jarvis-mission-control.git`, `upstream=https://github.com/Agent-3-7/minions.git` |
-| Git repository maintained | ✅ Verified | Active branch `kanban/jmc-jarvis-cards`; dirty state contains only QA/report + schema conflict-resolution work before final commit |
-| Cloudflare Tunnel works | ✅ Verified | `cloudflared tunnel --config ~/.cloudflared/config.yml ingress validate` → `OK`; `cloudflared tunnel ingress rule https://ms.selly.dev` matched rule #0 → `service: http://127.0.0.1:6969` |
+| Git repository maintained | ✅ Verified | Active branch `kanban/agentcontrol-cards`; dirty state contains only QA/report + schema conflict-resolution work before final commit |
+| Cloudflare Tunnel works | ✅ Verified | `cloudflared tunnel --config ~/.cloudflared/config.yml ingress validate` → `OK`; `cloudflared tunnel ingress rule https://ms.selly.dev` matched rule #0 → `service: http://127.0.0.1:7460` |
 | Cloudflare Access protects public app | ✅ Verified | `curl -D- https://ms.selly.dev/api/health` returned `HTTP/2 302`, `location: https://dev-agentselly.cloudflareaccess.com/cdn-cgi/access/login/...`, `www-authenticate: Cloudflare-Access`, `cf-ray: ...-ZRH` |
 | iOS compatibility implemented | ✅ Code/build verified | Production dist contains `viewport-fit=cover`, `safe-area-inset-*`, `h-dvh`, `touch-action: manipulation`, `-webkit-text-size-adjust:100%`, and `visibilitychange` refresh handling |
 | iOS test on physical device | ⚠️ Manual pending | Checklist exists in `docs/qa/ios-smoke-test.md`; requires actual iPhone/iPad Safari through the tunnel |
-| Kanban View with Jarvis Cards visible | ✅ Build verified | `client/src/components/Column.tsx` renders `JarvisCard`; `Board.tsx` renders `JarvisCardOverlay`; production build succeeded |
+| Kanban View with AgentControl Cards visible | ✅ Build verified | `client/src/components/Column.tsx` renders `AgentControlCard`; `Board.tsx` renders `AgentControlCardOverlay`; production build succeeded |
 | Subtasks as subissues delegable | ✅ API smoke verified | Created parent task and delegated subissue through `/api/tasks/:id/subissues`; response had `parent_task_id`, `delegation_status: "queued"`, `assignee: "qa-dev"`, labels, priority, and parent `child_count: 1` |
 | Hermes integration intact | ✅ Local health verified | Local `/api/health` returned `{ "ok": true, "hermes": true }` during smoke run with `HERMES_WORKER_DISABLED=1` |
 
@@ -66,7 +66,7 @@ Parent creation:
 ```bash
 curl -fsS -X POST http://127.0.0.1:45138/api/tasks \
   -H 'Content-Type: application/json' \
-  -d '{"title":"QA parent for Jarvis Mission Control","description":"Parent task created by final QA smoke test"}'
+  -d '{"title":"QA parent for AgentControl","description":"Parent task created by final QA smoke test"}'
 ```
 
 Parent id observed: `bdb5dd3f-24a0-452b-93a1-af8466c7556c`.
@@ -107,7 +107,7 @@ OK
 Using rules from /Users/renatowasescha/.cloudflared/config.yml
 Matched rule #0
 	hostname: ms.selly.dev
-	service: http://127.0.0.1:6969
+	service: http://127.0.0.1:7460
 HTTP/2 302
 location: https://dev-agentselly.cloudflareaccess.com/cdn-cgi/access/login/ms.selly.dev?...&redirect_url=%2Fapi%2Fhealth
 www-authenticate: Cloudflare-Access resource_metadata="https://ms.selly.dev/.well-known/cloudflare-access-protected-resource/api/health"
@@ -119,9 +119,9 @@ cf-ray: a01c1c207e62931a-ZRH
 
 - Cloudflare runbook: `docs/deploy/cloudflare-tunnel.md`
 - Cloudflare verification script: `scripts/cloudflare/verify-tunnel.sh`
-- PM2 production example: `scripts/pm2/jarvis-mission-control.ecosystem.config.cjs`
+- PM2 production example: `scripts/pm2/agentcontrol.ecosystem.config.cjs`
 - iOS manual smoke checklist: `docs/qa/ios-smoke-test.md`
-- Implementation plan and acceptance criteria: `docs/plans/2026-05-26-jarvis-mission-control.md`
+- Implementation plan and acceptance criteria: `docs/plans/2026-05-26-agentcontrol.md`
 
 ## Remaining Manual Gate
 

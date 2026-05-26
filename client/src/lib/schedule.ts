@@ -14,6 +14,7 @@ export interface ScheduleFormFields {
 }
 
 const RELATIVE_TIME_FORMATTER = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 export function nextRun(cron: string): Date | null {
   try {
@@ -24,9 +25,113 @@ export function nextRun(cron: string): Date | null {
 }
 
 export function scheduleSummary(scheduledTask: ScheduledTask): string {
-  if (scheduledTask.scheduleDisplay) return scheduledTask.scheduleDisplay;
+  const raw = (scheduledTask.scheduleDisplay || scheduleRaw(scheduledTask)).trim();
+  if (raw) return humanizeSchedule(raw) ?? raw;
   const kind = typeof scheduledTask.schedule?.kind === 'string' ? scheduledTask.schedule.kind : null;
   return kind ?? 'Unscheduled';
+}
+
+function pluralize(value: number, singular: string, plural = `${singular}s`): string {
+  return value === 1 ? singular : plural;
+}
+
+function intervalSummary(value: number, unit: IntervalUnit): string {
+  const label = unit === 'm' ? 'minute' : unit === 'h' ? 'hour' : 'day';
+  return `Every ${value === 1 ? label : `${value} ${pluralize(value, label)}`}`;
+}
+
+function formatCronTime(hour: number, minute: number): string {
+  const suffix = hour >= 12 ? 'PM' : 'AM';
+  const displayHour = hour % 12 || 12;
+  return `${displayHour}:${String(minute).padStart(2, '0')} ${suffix}`;
+}
+
+function parseCronNumber(value: string, max: number): number | null {
+  if (!/^\d+$/.test(value)) return null;
+  const parsed = Number.parseInt(value, 10);
+  return parsed >= 0 && parsed <= max ? parsed : null;
+}
+
+function dayOrdinal(day: number): string {
+  if (day >= 11 && day <= 13) return `${day}th`;
+  const tens = day % 10;
+  if (tens === 1) return `${day}st`;
+  if (tens === 2) return `${day}nd`;
+  if (tens === 3) return `${day}rd`;
+  return `${day}th`;
+}
+
+function parseWeekdayList(value: string): number[] | null {
+  if (!/^\d+(,\d+)+$/.test(value)) return null;
+  const nums = value.split(',').map((part) => Number.parseInt(part, 10));
+  if (!nums.every((n) => Number.isInteger(n) && n >= 0 && n <= 7)) return null;
+  return Array.from(new Set(nums.map((n) => n % 7))).sort();
+}
+
+function joinWithAnd(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? '';
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+}
+
+function humanizeCron(raw: string): string | null {
+  const parts = raw.trim().split(/\s+/);
+  if (parts.length !== 5) return null;
+
+  const [minutePart, hourPart, dayPart, monthPart, weekdayPart] = parts;
+  const allWild = dayPart === '*' && monthPart === '*' && weekdayPart === '*';
+
+  const intervalMinutes = minutePart.match(/^\*\/(\d+)$/);
+  if (intervalMinutes && hourPart === '*' && allWild) {
+    const value = Number.parseInt(intervalMinutes[1], 10);
+    return Number.isFinite(value) && value > 0 ? intervalSummary(value, 'm') : null;
+  }
+
+  const intervalHours = hourPart.match(/^\*\/(\d+)$/);
+  if (intervalHours && allWild) {
+    const hours = Number.parseInt(intervalHours[1], 10);
+    if (!Number.isFinite(hours) || hours <= 0) return null;
+    const minuteNum = parseCronNumber(minutePart, 59);
+    if (minuteNum === null) return null;
+    if (minuteNum === 0) return intervalSummary(hours, 'h');
+    return `Every ${hours === 1 ? 'hour' : `${hours} hours`} at :${String(minuteNum).padStart(2, '0')}`;
+  }
+
+  if (minutePart === '0' && hourPart === '*' && allWild) return 'Every hour';
+
+  const minute = parseCronNumber(minutePart, 59);
+  const hour = parseCronNumber(hourPart, 23);
+  if (minute === null || hour === null || monthPart !== '*') return null;
+  const time = formatCronTime(hour, minute);
+
+  if (dayPart !== '*' && weekdayPart === '*') {
+    const day = parseCronNumber(dayPart, 31);
+    if (day !== null && day >= 1) return `Monthly on the ${dayOrdinal(day)} at ${time}`;
+    return null;
+  }
+  if (dayPart !== '*') return null;
+
+  if (weekdayPart === '*') return `Daily at ${time}`;
+  if (weekdayPart === '1-5') return `Weekdays at ${time}`;
+  if (weekdayPart === '0,6' || weekdayPart === '6,0') return `Weekends at ${time}`;
+
+  const weekday = parseCronNumber(weekdayPart, 7);
+  if (weekday !== null) return `Weekly on ${WEEKDAY_NAMES[weekday % 7]} at ${time}`;
+
+  const weekdayList = parseWeekdayList(weekdayPart);
+  if (weekdayList && weekdayList.length > 0) {
+    const days = weekdayList.map((n) => `${WEEKDAY_NAMES[n]}s`);
+    return `${joinWithAnd(days)} at ${time}`;
+  }
+
+  return null;
+}
+
+function humanizeSchedule(raw: string): string | null {
+  const trimmed = raw.trim();
+  const interval = detectInterval(trimmed);
+  if (interval) return intervalSummary(Number.parseInt(interval.intervalValue, 10), interval.intervalUnit);
+  return humanizeCron(trimmed);
 }
 
 export function intervalToken(minutes: number): { value: number; unit: IntervalUnit } {

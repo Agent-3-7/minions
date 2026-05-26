@@ -1,36 +1,39 @@
-# Minions
+# AgentControl
 
-**Mission Control for Hermes Agent**
+**AgentControl for Hermes Agent**
 
 Hermes Agent is powerful, but running real work on it means juggling terminal sessions, losing track of which job finished, and manually checking on long-running tasks. The more you delegate, the harder it gets to manage.
 
-Minions gives you one screen to create, supervise, and review autonomous Hermes Agent work.
+AgentControl gives you one screen to create, supervise, and review autonomous Hermes Agent work.
 
 Hosted access option on [Agent37](https://www.agent37.com).
 
-## Demo
+## Screenshots
 
+![Kanban board of tasks](screenshots/tasks-board.jpg)
+
+![New task creation screen](screenshots/new-task.jpg)
 
 ## Quick Start
 
 **Prerequisites:** Node.js 18+ and [Hermes Agent](https://hermes-agent.nousresearch.com)
 
 ```bash
-npx minionsai
+npx agentcontrol
 ```
 
-Open [http://localhost:6969](http://localhost:6969).
+Open [http://localhost:7460](http://localhost:7460).
 
-Local sqllite db is created on first run and state lives in `~/.minions/`
+Local sqllite db is created on first run and state lives in `~/.agentcontrol/`
 
 Check the installed version:
 
 ```bash
-minions --version
-npm view minionsai version
+agentcontrol --version
+npm view agentcontrolai version
 ```
 
-The Settings page also shows the version of the running Minions server.
+The Settings page also shows the version of the running AgentControl server.
 
 ## Features
 
@@ -46,7 +49,7 @@ The Settings page also shows the version of the running Minions server.
 
 ## How It Works
 
-Each task is a persistent Hermes root session. You talk to it, it works, and the board reflects where everything stands. Chat transcripts live in Hermes's session database; Minions stores task metadata, status, and per-task settings in a local SQLite database.
+Each task is a persistent Hermes root session. You talk to it, it works, and the board reflects where everything stands. Chat transcripts live in Hermes's session database; AgentControl stores task metadata, status, and per-task settings in a local SQLite database.
 
 ## Who It's For
 
@@ -59,7 +62,7 @@ Each task is a persistent Hermes root session. You talk to it, it works, and the
 - **Scheduled task supervision**: automatically monitor, recover, and report on scheduled agent jobs
 - **Notifications**: get alerted via Telegram, WhatsApp, or webhook when a task needs review
 - **Skills library**: pluggable skill templates for common workflows (lead gen, web research, content pipelines, data collection, competitive monitoring, outbound sequences)
-- **OpenClaw adapter**: run Minions against OpenClaw-hosted agents
+- **OpenClaw adapter**: run AgentControl against OpenClaw-hosted agents
 
 ## FAQ
 

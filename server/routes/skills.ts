@@ -8,14 +8,14 @@ import yauzl from 'yauzl';
 import { parseDocument } from 'yaml';
 import { Router, type Request, type Response } from 'express';
 import type { ClawHubSkillSummary, ClawHubStats, SkillMeta } from '../../shared/types.js';
-import { resolveHermesHome, resolveMinionsSkillsDir } from '../paths.js';
+import { resolveHermesHome, resolveAgentControlSkillsDir } from '../paths.js';
 
 const CLAWHUB_API_BASE = 'https://clawhub.ai/api/v1';
-const SIDECAR_FILENAME = '.minions-skill.json';
+const SIDECAR_FILENAME = '.agentcontrol-skill.json';
 const MAX_SKILL_FILES = 250;
 const MAX_SKILL_FILE_BYTES = 5 * 1024 * 1024;
 const MAX_SKILL_TOTAL_BYTES = 25 * 1024 * 1024;
-const SKILL_IMPORT_TMP_DIR = join(tmpdir(), 'minions-skill-imports');
+const SKILL_IMPORT_TMP_DIR = join(tmpdir(), 'agentcontrol-skill-imports');
 
 mkdirSync(SKILL_IMPORT_TMP_DIR, { recursive: true });
 
@@ -39,7 +39,7 @@ interface Frontmatter {
   description?: string;
 }
 
-interface MinionsSkillSidecar {
+interface AgentControlSkillSidecar {
   provider?: string;
   registrySlug?: string;
   version?: string;
@@ -254,12 +254,12 @@ function skillIdFromFile(root: string, skillFile: string): string {
   return relative(root, dirname(skillFile)).split(sep).join('/');
 }
 
-async function readInstalledSkill(skillFile: string, root = resolveMinionsSkillsDir()): Promise<SkillMeta> {
+async function readInstalledSkill(skillFile: string, root = resolveAgentControlSkillsDir()): Promise<SkillMeta> {
   const content = await readFile(skillFile, 'utf8');
   const frontmatter = parseFrontmatter(content);
   const skillDir = dirname(skillFile);
   const id = skillIdFromFile(root, skillFile);
-  const sidecar = await readJsonFile<MinionsSkillSidecar>(join(skillDir, SIDECAR_FILENAME));
+  const sidecar = await readJsonFile<AgentControlSkillSidecar>(join(skillDir, SIDECAR_FILENAME));
   const fallbackName = basename(skillDir);
   const provider = sidecar?.provider;
   const registrySlug = sidecar?.registrySlug ?? (id.startsWith('clawhub/') ? id.slice('clawhub/'.length).split('/')[0] : undefined);
@@ -302,7 +302,7 @@ async function findSkillFiles(dir: string, found: string[] = []): Promise<string
 }
 
 async function listInstalledSkills(): Promise<SkillMeta[]> {
-  const root = resolveMinionsSkillsDir();
+  const root = resolveAgentControlSkillsDir();
   await mkdir(root, { recursive: true });
   const files = await findSkillFiles(root);
   const skills = await Promise.all(files.map((file) => readInstalledSkill(file, root)));
@@ -314,7 +314,7 @@ async function listInstalledSkills(): Promise<SkillMeta[]> {
 }
 
 function resolveInstalledSkillFile(id: string): string {
-  const root = resolveMinionsSkillsDir();
+  const root = resolveAgentControlSkillsDir();
   const relId = normalizeSkillId(id);
   const skillFile = resolve(root, relId, 'SKILL.md');
   ensureInside(root, skillFile);
@@ -322,7 +322,7 @@ function resolveInstalledSkillFile(id: string): string {
 }
 
 async function deleteInstalledSkill(id: string): Promise<SkillMeta> {
-  const root = resolveMinionsSkillsDir();
+  const root = resolveAgentControlSkillsDir();
   const skillFile = resolveInstalledSkillFile(id);
   if (!await pathExists(skillFile)) {
     throw new RouteError(404, `Skill '${id}' is not installed`, 'SKILL_NOT_FOUND');
@@ -676,11 +676,11 @@ function resolveConfigDir(value: string): string {
   return resolve(resolveHermesHome(), expanded);
 }
 
-// Registers MINIONS_HOME/skills as a Hermes `skills.external_dirs` entry so agent
+// Registers AGENTCONTROL_HOME/skills as a Hermes `skills.external_dirs` entry so agent
 // runs load installed skills. Idempotent — called once at server boot; installs
 // drop skills into the already-registered dir and need no further config write.
 export async function ensureHermesExternalSkillsDir(): Promise<void> {
-  const skillsDir = resolveMinionsSkillsDir();
+  const skillsDir = resolveAgentControlSkillsDir();
   const hermesHome = resolveHermesHome();
   const configPath = join(hermesHome, 'config.yaml');
   await mkdir(hermesHome, { recursive: true });
@@ -712,7 +712,7 @@ export async function ensureHermesExternalSkillsDir(): Promise<void> {
   await writeFile(configPath, doc.toString(), 'utf8');
 }
 
-async function writeSkillFiles(destination: string, files: Map<string, Buffer>, sidecar: MinionsSkillSidecar): Promise<void> {
+async function writeSkillFiles(destination: string, files: Map<string, Buffer>, sidecar: AgentControlSkillSidecar): Promise<void> {
   const parent = dirname(destination);
   const tempDir = join(parent, `.${basename(destination)}.tmp-${Date.now()}-${randomUUID()}`);
   await rm(tempDir, { recursive: true, force: true });
@@ -740,7 +740,7 @@ async function installClawHubSkill(slug: string, requestedVersion: string | unde
   installed: boolean;
   alreadyInstalled: boolean;
 }> {
-  const skillsRoot = resolveMinionsSkillsDir();
+  const skillsRoot = resolveAgentControlSkillsDir();
   const destination = resolve(skillsRoot, 'clawhub', slug);
   ensureInside(skillsRoot, destination);
   await mkdir(dirname(destination), { recursive: true });
@@ -760,7 +760,7 @@ async function installClawHubSkill(slug: string, requestedVersion: string | unde
   const files = await downloadClawHubFiles(slug, version, versionPayload);
   const skill = skillPayload(detail);
 
-  const sidecar: MinionsSkillSidecar = {
+  const sidecar: AgentControlSkillSidecar = {
     provider: 'clawhub',
     registrySlug: slug,
     version,
@@ -801,11 +801,11 @@ async function importLocalSkill(uploadedFiles: Express.Multer.File[], relativePa
   const frontmatter = parseFrontmatter(skillContent.toString('utf8'));
   const displayName = frontmatter.name || prepared.rootName || 'Local skill';
   const summary = frontmatter.description || '';
-  const skillsRoot = resolveMinionsSkillsDir();
+  const skillsRoot = resolveAgentControlSkillsDir();
   const baseSlug = slugifySkillDirectoryName(displayName, 'skill');
   const destination = await uniqueLocalSkillDestination(skillsRoot, baseSlug);
 
-  const sidecar: MinionsSkillSidecar = {
+  const sidecar: AgentControlSkillSidecar = {
     provider: 'local',
     displayName,
     summary,
@@ -950,7 +950,7 @@ skillsRouter.get('/:id/content', async (req, res) => {
       throw new RouteError(404, `Skill '${req.params.id}' is not installed`, 'SKILL_NOT_FOUND');
     }
 
-    const root = resolveMinionsSkillsDir();
+    const root = resolveAgentControlSkillsDir();
     const [skill, content] = await Promise.all([
       readInstalledSkill(skillFile, root),
       readFile(skillFile, 'utf8'),

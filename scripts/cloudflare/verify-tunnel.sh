@@ -7,7 +7,7 @@ Usage: scripts/cloudflare/verify-tunnel.sh <hostname>
 
 Environment:
   HOST                Local bind host to probe (default: 127.0.0.1)
-  PORT                Local port to probe (default: 6969)
+  PORT                Local port to probe (default: 7460)
   CLOUDFLARED_CONFIG  cloudflared config path (default: ~/.cloudflared/config.yml)
 
 Checks local /api/health, cloudflared ingress validation/rule matching when
@@ -27,7 +27,7 @@ if [[ -z "$HOSTNAME" ]]; then
 fi
 
 LOCAL_HOST="${HOST:-127.0.0.1}"
-LOCAL_PORT="${PORT:-6969}"
+LOCAL_PORT="${PORT:-7460}"
 CLOUDFLARED_CONFIG="${CLOUDFLARED_CONFIG:-$HOME/.cloudflared/config.yml}"
 LOCAL_URL="http://${LOCAL_HOST}:${LOCAL_PORT}/api/health"
 PUBLIC_URL="https://${HOSTNAME}/api/health"
@@ -43,7 +43,7 @@ local_code="$(curl -sS -o "$local_body" -w '%{http_code}' "$LOCAL_URL" || true)"
 if [[ "$local_code" != "200" ]]; then
   cat "$local_body" >&2 || true
   rm -f "$local_body"
-  fail "local health returned HTTP ${local_code}; start Jarvis Mission Control on ${LOCAL_HOST}:${LOCAL_PORT} first"
+  fail "local health returned HTTP ${local_code}; start AgentControl on ${LOCAL_HOST}:${LOCAL_PORT} first"
 fi
 ok "local health returned HTTP 200: $(tr -d '\n' < "$local_body" | cut -c1-160)"
 rm -f "$local_body"

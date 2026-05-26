@@ -337,11 +337,14 @@ chatRouter.post('/:id/messages', async (req, res) => {
   }
 
   let runTask = task;
-  const taskUpdates: Partial<Pick<Task, 'status' | 'agent_model' | 'reasoning_effort'>> = {};
+  const taskUpdates: Partial<Pick<Task, 'status' | 'agent_model' | 'agent_provider' | 'reasoning_effort'>> = {};
   if (runSettings.hasFields) {
     const { taskFields } = runSettings;
     if (taskFields.agent_model !== undefined && taskFields.agent_model !== task.agent_model) {
       taskUpdates.agent_model = taskFields.agent_model;
+    }
+    if (taskFields.agent_provider !== undefined && taskFields.agent_provider !== task.agent_provider) {
+      taskUpdates.agent_provider = taskFields.agent_provider;
     }
     if (taskFields.reasoning_effort !== undefined && taskFields.reasoning_effort !== task.reasoning_effort) {
       taskUpdates.reasoning_effort = taskFields.reasoning_effort;

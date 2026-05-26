@@ -17,7 +17,7 @@ import type {
 } from '../../shared/types.js';
 import type { AgentAdapter, AgentRunOptions, AgentRunSettings, StreamEvent } from './types.js';
 import type { WorkerEvent, WorkerRequest, WorkerResult, WorkerErrorPayload } from './worker-protocol.js';
-import { expandHomePrefix, resolveHermesHome, resolveMinionsWorkspaceDir } from '../paths.js';
+import { expandHomePrefix, resolveHermesHome, resolveAgentControlWorkspaceDir } from '../paths.js';
 
 const WORKER_READY_TIMEOUT_MS = 10_000;
 const WORKER_INTERRUPT_TIMEOUT_MS = 10_000;
@@ -315,7 +315,7 @@ class HermesWorkerClient {
 
     const python = resolvePython();
     const script = resolveWorkerScript();
-    const workspace = resolveMinionsWorkspaceDir();
+    const workspace = resolveAgentControlWorkspaceDir();
     mkdirSync(workspace, { recursive: true });
     const child = spawn(python, [script], {
       cwd: workspace,
@@ -537,10 +537,11 @@ export class HermesWorkerAdapter implements AgentAdapter {
     return await this.client.request<AgentModelsResponse>('models.list');
   }
 
-  async listScheduledTasks(includeDisabled = false): Promise<ScheduledTask[]> {
+  async listScheduledTasks(includeDisabled = false, limit = 100): Promise<ScheduledTask[]> {
     const result = await this.client.request<{ scheduledTasks: ScheduledTask[] }>({
       type: 'scheduledTasks.list',
       includeDisabled,
+      limit,
     });
     return result.scheduledTasks;
   }

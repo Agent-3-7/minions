@@ -6,7 +6,7 @@ import { useAgentConfig } from '../hooks/useAgentConfig';
 import { fetchAppVersion, updateAgentDefaults } from '../lib/api';
 import type { AppVersion } from '@shared/types';
 import { toErrorMessage } from '../lib/format';
-import { ModelPicker, REASONING_LABELS, type ModelPickerSelection } from './InputToolbar';
+import { ModelPicker, parseQualifiedModelValue, REASONING_LABELS, type ModelPickerSelection } from './InputToolbar';
 import {
   REASONING_EFFORTS,
   type ReasoningEffort,
@@ -50,16 +50,6 @@ function SegmentedGroup<T>({ options, value, onChange }: {
   );
 }
 
-function splitQualifiedModel(value: string): { provider: string; model: string } | null {
-  if (!value.startsWith('@')) return null;
-  const separator = value.lastIndexOf(':');
-  if (separator <= 1 || separator === value.length - 1) return null;
-  return {
-    provider: value.slice(1, separator),
-    model: value.slice(separator + 1),
-  };
-}
-
 export function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const { enabled: soundEnabled, setEnabled: setSoundEnabled, playPreview } = useSoundOnComplete();
@@ -77,7 +67,7 @@ export function SettingsPage() {
         if (!cancelled) setAppVersion(v);
       })
       .catch(() => {
-        if (!cancelled) setAppVersion({ name: 'minionsai', version: 'unknown' });
+        if (!cancelled) setAppVersion({ name: 'AgentControl', version: 'unknown' });
       });
 
     return () => {
@@ -151,17 +141,16 @@ export function SettingsPage() {
           <div className="mt-4 flex items-center flex-wrap gap-3">
             <ModelPicker
               value={agentDefaults?.model ?? ''}
-              defaultModel={null}
+              provider={agentDefaults?.provider ?? null}
               modelGroups={modelGroups}
               disabled={isLoadingDefaults || savingDefaults}
               title={agentDefaults?.model ? `Default: ${agentDefaults.model}` : 'Select default model'}
-              showInheritOption={false}
               onChange={(nextModel, selection?: ModelPickerSelection) => {
-                const parsed = splitQualifiedModel(nextModel);
-                const provider = selection?.provider ?? parsed?.provider ?? undefined;
+                const parsed = parseQualifiedModelValue(nextModel);
+                const provider = selection?.provider ?? parsed?.provider;
                 saveDefaults({
-                  model: parsed?.model ?? (nextModel || null),
-                  ...(provider !== undefined ? { provider } : {}),
+                  model: parsed?.model ?? nextModel,
+                  ...(provider ? { provider } : {}),
                 });
               }}
             />
@@ -207,7 +196,7 @@ export function SettingsPage() {
           <h2 className="text-xs font-medium uppercase tracking-wide text-zinc-400 dark:text-zinc-500 mb-2">Version</h2>
           <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-xs font-medium text-zinc-900 dark:text-zinc-100">
             <Info size={14} />
-            Minions
+            AgentControl
             <span className="text-zinc-500 dark:text-zinc-400">
               {appVersion ? `v${appVersion.version}` : '...'}
             </span>

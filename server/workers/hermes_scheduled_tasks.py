@@ -140,12 +140,16 @@ def _build_update_dict(request: dict[str, Any]) -> dict[str, Any]:
     return updates
 
 
-def list_scheduled_tasks(include_disabled: bool = False) -> dict[str, Any]:
+def list_scheduled_tasks(include_disabled: bool = False, limit: Any = 100) -> dict[str, Any]:
     _ensure_imports()
     from cron.jobs import list_jobs
 
+    try:
+        safe_limit = max(1, min(int(limit), 100))
+    except (TypeError, ValueError):
+        safe_limit = 100
     jobs = [_normalize_scheduled_task(job) for job in list_jobs(include_disabled=include_disabled)]
-    return {"scheduledTasks": [job for job in jobs if job is not None]}
+    return {"scheduledTasks": [job for job in jobs if job is not None][:safe_limit]}
 
 
 def get_scheduled_task(job_id: Any) -> dict[str, Any]:

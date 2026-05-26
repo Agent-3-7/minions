@@ -18,6 +18,20 @@ function apply(pref: ThemePreference) {
   document.documentElement.classList.toggle('dark', dark);
 }
 
+export function useIsDarkMode(): boolean {
+  const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setDark(document.documentElement.classList.contains('dark'));
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
+
+  return dark;
+}
+
 export function useTheme() {
   const [theme, setThemeState] = useState<ThemePreference>(getStored);
 

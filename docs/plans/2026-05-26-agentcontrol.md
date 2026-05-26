@@ -1,14 +1,14 @@
-# Jarvis Mission Control Implementation Plan
+# AgentControl Implementation Plan
 
 > **For Hermes:** Use Kanban task delegation for implementation. Code tasks must run in isolated git worktrees from `/Users/renatowasescha/GIT/jarvis-mission-control` and land in Git with commits/PRs. One PR per coherent topic.
 
-**Goal:** Fork Minions into **Jarvis Mission Control**: a Hermes-native mission control dashboard with Cloudflare Tunnel support, iOS-compatible UX/realtime behavior, Linear-style Kanban/Jarvis cards, and delegable subtasks as subissues.
+**Goal:** Fork upstream Minions into **AgentControl**: a Hermes-native mission control dashboard with Cloudflare Tunnel support, iOS-compatible UX/realtime behavior, Linear-style Kanban/AgentControl cards, and delegable subtasks as subissues.
 
 **Repository:** `https://github.com/rewasa/jarvis-mission-control` (fork of `Agent-3-7/minions`)
 
 **Local path:** `/Users/renatowasescha/GIT/jarvis-mission-control`
 
-**Architecture:** Keep Minions’ current Express + SQLite + Hermes worker + React/Vite stack. Add a small product identity layer, metadata tables for task hierarchy/delegation, API routes for subissues, UI components for Jarvis cards, mobile/SSE resiliency, and deployment docs/scripts for Cloudflare Tunnel. Do not replace Hermes; integrate deeper by using Hermes session/tooling conventions and explicit delegation prompts.
+**Architecture:** Keep the current Express + SQLite + Hermes worker + React/Vite stack. Add a small product identity layer, metadata tables for task hierarchy/delegation, API routes for subissues, UI components for AgentControl cards, mobile/SSE resiliency, and deployment docs/scripts for Cloudflare Tunnel. Do not replace Hermes; integrate deeper by using Hermes session/tooling conventions and explicit delegation prompts.
 
 **Tech Stack:** Node 18+, Express, SQLite/better-sqlite3, React 19, Vite, Tailwind, Zustand, Hermes Agent Python worker, Cloudflare Tunnel/Access.
 
@@ -16,38 +16,38 @@
 
 ## Current Baseline / Gap Analysis
 
-Already present in upstream Minions:
-- Express API + React Kanban board on `:6969`.
-- SQLite task persistence under `MINIONS_HOME`.
+Already present in the upstream base:
+- Express API + React Kanban board on `:7460`.
+- SQLite task persistence under `AGENTCONTROL_HOME`.
 - Direct Hermes `AIAgent` integration through `server/workers/hermes_worker.py`.
 - Hermes scheduled tasks page and skills support.
 - SSE board updates via `/api/events` and live chat via `/api/tasks/:id/live`.
 
-Missing for Jarvis Mission Control:
+Missing for AgentControl:
 - Repo/product identity and docs for the fork.
 - First-class Cloudflare Tunnel config/runbook and health verification.
 - iOS-specific viewport/touch/SSE fallback/reconnect support.
 - Task hierarchy: parent/subissue metadata, API routes, event payloads.
 - Delegation action: create subissue and optionally start a Hermes goal run with scoped context.
-- Linear-style Jarvis cards: richer metadata, child counts, status badges, priority/labels, visual hierarchy.
+- Linear-style AgentControl cards: richer metadata, child counts, status badges, priority/labels, visual hierarchy.
 - Verification scripts and acceptance smoke tests.
 
 ---
 
 ## Milestone 0 — Fork + Project Setup
 
-**Objective:** Establish the fork as Jarvis Mission Control and keep upstream sync clean.
+**Objective:** Establish the fork as AgentControl and keep upstream sync clean.
 
 **Files:**
 - Modify: `package.json`
 - Modify: `README.md`
-- Create: `docs/plans/2026-05-26-jarvis-mission-control.md`
+- Create: `docs/plans/2026-05-26-agentcontrol.md`
 - Create: `docs/operations/upstream-sync.md`
 
 **Steps:**
 1. Rename GitHub fork to `rewasa/jarvis-mission-control`.
 2. Set local `origin` to the fork and `upstream` to `Agent-3-7/minions`.
-3. Add product name/description while keeping package binary compatibility initially (`minions` can remain as alias until release).
+3. Add product name/description while keeping package binary compatibility initially (`minions` remains as a backwards-compatible CLI alias).
 4. Document sync flow:
    - `git fetch upstream`
    - `git checkout main`
@@ -60,28 +60,28 @@ Missing for Jarvis Mission Control:
 
 ## Milestone 1 — Cloudflare Tunnel Support
 
-**Objective:** Make local Jarvis Mission Control safely reachable through Cloudflare Tunnel, with clear production/dev commands.
+**Objective:** Make local AgentControl safely reachable through Cloudflare Tunnel, with clear production/dev commands.
 
 **Files:**
 - Create: `docs/deploy/cloudflare-tunnel.md`
 - Create: `scripts/cloudflare/verify-tunnel.sh`
-- Create: `scripts/pm2/jarvis-mission-control.ecosystem.config.cjs`
+- Create: `scripts/pm2/agentcontrol.ecosystem.config.cjs`
 - Modify: `.env.example`
 - Modify: `server/index.ts` or server listen/config module if host/port handling is currently hardcoded.
 
 **Implementation notes:**
-- App should stay loopback-bound by default: `HOST=127.0.0.1`, `PORT=6969`.
+- App should stay loopback-bound by default: `HOST=127.0.0.1`, `PORT=7460`.
 - Cloudflare ingress example:
   ```yaml
   - hostname: ms.selly.dev
-    service: http://127.0.0.1:6969
+    service: http://127.0.0.1:7460
   - service: http_status:404
   ```
 - Include Zero Trust Access expectation: public `/api/health` through tunnel should be `302`/Access challenge when protected; local health should be `200`.
 - Add a script that verifies local health, ingress rule match, and public Access response headers.
 
 **Verification:**
-- `curl -sS http://127.0.0.1:6969/api/health`
+- `curl -sS http://127.0.0.1:7460/api/health`
 - `cloudflared tunnel --config ~/.cloudflared/config.yml ingress validate`
 - `cloudflared tunnel ingress rule https://<hostname> --config ~/.cloudflared/config.yml`
 - `scripts/cloudflare/verify-tunnel.sh <hostname>`
@@ -145,7 +145,7 @@ Missing for Jarvis Mission Control:
 
 **Delegation behavior:**
 - Creating a delegated subissue should create a child task with parent context embedded in the description.
-- If `delegate=true`, start a Hermes goal/task run for the child or place it into the correct work queue according to current Minions execution semantics.
+- If `delegate=true`, start a Hermes goal/task run for the child or place it into the correct work queue according to current AgentControl execution semantics.
 - Parent remains human-controlled; child completion can surface on the parent card but should not auto-mark parent done.
 
 **Verification:**
@@ -155,15 +155,15 @@ Missing for Jarvis Mission Control:
 
 ---
 
-## Milestone 4 — Kanban View with Jarvis Cards (Linear Style)
+## Milestone 4 — Kanban View with AgentControl Cards (Linear Style)
 
-**Objective:** Replace plain task cards with richer Jarvis cards while preserving fast drag/drop.
+**Objective:** Replace plain task cards with richer AgentControl cards while preserving fast drag/drop.
 
 **Files:**
 - Modify: `client/src/components/Board.tsx`
 - Modify: `client/src/components/Column.tsx`
 - Modify: `client/src/components/TaskCard.tsx`
-- Create: `client/src/components/JarvisCard.tsx`
+- Create: `client/src/components/AgentControlCard.tsx`
 - Create: `client/src/components/SubissueList.tsx`
 - Modify: `client/src/lib/constants.ts`
 - Modify: `client/src/styles/globals.css`
@@ -178,7 +178,7 @@ Missing for Jarvis Mission Control:
 
 **Visual direction:**
 - Linear-like density, rounded cards, subtle borders, strong typography.
-- “Jarvis” accent for active/delegated cards.
+- “AgentControl” accent for active/delegated cards.
 - Mobile: card actions accessible by tap, no hover-only dependency.
 
 **Verification:**
@@ -191,7 +191,7 @@ Missing for Jarvis Mission Control:
 
 ## Milestone 5 — Deep Hermes Integration
 
-**Objective:** Make Jarvis Mission Control feel like a Hermes control plane, not only a wrapper.
+**Objective:** Make AgentControl feel like a Hermes control plane, not only a wrapper.
 
 **Files:**
 - Modify: `server/prompts/task-agent.ts`
@@ -243,7 +243,7 @@ Use board: `jarvis-mission-control`.
 2. **Cloudflare Tunnel integration** — assignee: `worker` or `backend-dev`; no parents after setup.
 3. **iOS compatibility + SSE fallback** — assignee: `kimi-ui`; parent: setup.
 4. **Subissues backend model/API** — assignee: `backend-dev`; parent: setup.
-5. **Jarvis Cards + Linear-style Kanban UI** — assignee: `kimi-ui`; parent: Subissues backend.
+5. **AgentControl Cards + Linear-style Kanban UI** — assignee: `kimi-ui`; parent: Subissues backend.
 6. **Deep Hermes delegation flow** — assignee: `backend-dev`; parent: Subissues backend.
 7. **QA: build + local + iOS/tunnel smoke** — assignee: `qa-dev`; parents: Cloudflare, iOS, UI, Hermes delegation.
 8. **Review + Git hygiene** — assignee: `reviewer`; parent: QA.
@@ -256,6 +256,6 @@ Use board: `jarvis-mission-control`.
 - [x] Local repo exists: `/Users/renatowasescha/GIT/jarvis-mission-control`.
 - [ ] Cloudflare Tunnel works for selected hostname.
 - [ ] iOS device test successful.
-- [ ] Kanban view shows Jarvis/Linear-style cards.
+- [ ] Kanban view shows AgentControl/Linear-style cards.
 - [ ] Subtasks are createable as subissues and delegable.
 - [ ] Implementation committed and pushed with PR(s).

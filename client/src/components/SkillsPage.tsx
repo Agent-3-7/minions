@@ -1105,7 +1105,7 @@ export function SkillsPage() {
       {skillToDelete && (
         <DeleteConfirmModal
           title="Delete skill"
-          body={`This removes "${skillToDelete.name}" from ~/.minions/skills. Future agent runs will no longer include it.`}
+          body={`This removes "${skillToDelete.name}" from ~/.agentcontrol/skills. Future agent runs will no longer include it.`}
           confirmLabel="Delete skill"
           isConfirming={deletingSkillId === skillToDelete.id}
           error={deleteError}

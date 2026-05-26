@@ -28,12 +28,13 @@ function buildTaskSettings(task: Task, defaults: AgentDefaults): TaskAgentSettin
   return {
     task: {
       model: overrides.model ?? null,
+      provider: overrides.provider ?? null,
       reasoningEffort: overrides.reasoningEffort ?? null,
     },
     defaults,
     effective: {
       model: overrides.model ?? defaults.model,
-      provider: defaults.provider,
+      provider: overrides.provider ?? defaults.provider,
       reasoningEffort: overrides.reasoningEffort ?? defaults.reasoningEffort,
     },
   };

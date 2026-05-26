@@ -4,6 +4,9 @@ import type { ScheduledTask, ScheduledTaskInput } from '../../shared/types.js';
 import type { HermesWorkerAdapter } from '../adapters/hermes-worker.js';
 import { listScheduledTaskRuns, getScheduledTaskRunContent } from '../scheduled-tasks/runs.js';
 
+const SCHEDULED_TASKS_LIMIT = 100;
+const SCHEDULED_TASK_RUNS_LIMIT = 50;
+
 const SCHEDULED_TASK_INPUT_FIELDS = [
   'name',
   'prompt',
@@ -51,7 +54,10 @@ export function createScheduledTasksRouter(adapter: HermesWorkerAdapter): Router
   router.get('/', async (req, res) => {
     try {
       const includeDisabled = req.query.includeDisabled === 'true';
-      const scheduledTasks = await adapter.listScheduledTasks(includeDisabled);
+      const rawLimit = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
+      const parsedLimit = rawLimit ? Number.parseInt(String(rawLimit), 10) : SCHEDULED_TASKS_LIMIT;
+      const limit = Number.isFinite(parsedLimit) ? parsedLimit : SCHEDULED_TASKS_LIMIT;
+      const scheduledTasks = await adapter.listScheduledTasks(includeDisabled, limit);
       res.json({ scheduledTasks });
     } catch (error) {
       res.status(503).json({ error: toErrorMessage(error, 'Hermes scheduled tasks worker unavailable') });
@@ -104,8 +110,8 @@ export function createScheduledTasksRouter(adapter: HermesWorkerAdapter): Router
   router.get('/:id/runs', async (req, res) => {
     try {
       const rawLimit = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
-      const limit = rawLimit ? Number.parseInt(String(rawLimit), 10) : 20;
-      const runs = await listScheduledTaskRuns(req.params.id, Number.isFinite(limit) ? limit : 20);
+      const limit = rawLimit ? Number.parseInt(String(rawLimit), 10) : SCHEDULED_TASK_RUNS_LIMIT;
+      const runs = await listScheduledTaskRuns(req.params.id, Number.isFinite(limit) ? limit : SCHEDULED_TASK_RUNS_LIMIT);
       res.json({ runs });
     } catch (error) {
       res.status(500).json({ error: toErrorMessage(error, 'Failed to list scheduled task runs') });

@@ -235,7 +235,7 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
   if (startupRef.current.taskId !== taskId) {
     startupRef.current = { taskId, initialMessage, initialSettings };
   }
-  const { defaults, modelGroups, model, setModel, reasoningEffort, setReasoningEffort, isLoading } = useAgentConfig(
+  const { defaults, modelGroups, model, setModel, provider, setProvider, reasoningEffort, setReasoningEffort, isLoading } = useAgentConfig(
     taskId,
     startupRef.current.initialSettings,
   );
@@ -413,7 +413,7 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
 
     const messageText = submitWithAttachments(text);
 
-    const settings = { model, reasoningEffort, mode: isGoalStreaming ? 'task' : runMode };
+    const settings = { model, provider, reasoningEffort, mode: isGoalStreaming ? 'task' : runMode };
     if (taskBusyForQueue) {
       setQueuedMessage({
         id: crypto.randomUUID(),
@@ -437,7 +437,7 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
       // otherwise attachments are silently dropped on a busy-task conflict.
       setInput(messageText);
     }
-  }, [submitWithAttachments, configPending, uploadBlocksSend, input, pendingFiles, queuedMessage, model, reasoningEffort, runMode, isGoalStreaming, taskBusyForQueue, sendMessage, taskId]);
+  }, [submitWithAttachments, configPending, uploadBlocksSend, input, pendingFiles, queuedMessage, model, provider, reasoningEffort, runMode, isGoalStreaming, taskBusyForQueue, sendMessage, taskId]);
 
   const handleCompact = useCallback(async () => {
     if (compactionBlocker || isStreaming) return;
@@ -654,17 +654,22 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
               onRetry={handleRetryQueuedMessage}
             />
           )}
-          <div className="flex items-end justify-between gap-3 px-3 pb-3 sm:px-4">
-            <div className="flex min-w-0 items-center gap-2">
+          <div className="flex items-center justify-between gap-2 px-3 pb-3 sm:gap-3 sm:px-4">
+            <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
               <AttachButton onFiles={addFiles} disabled={configPending} />
               <InputToolbar
                 model={model}
+                provider={provider}
                 reasoningEffort={reasoningEffort}
                 runMode={runMode}
                 defaults={toolbarDefaults}
                 modelGroups={modelGroups}
                 disabled={goalToggleDisabled}
-                onModelChange={setModel}
+                compactMobile
+                onModelChange={(nextModel, nextProvider) => {
+                  setModel(nextModel);
+                  setProvider(nextProvider ?? null);
+                }}
                 onReasoningEffortChange={setReasoningEffort}
                 onRunModeChange={setRunMode}
               />

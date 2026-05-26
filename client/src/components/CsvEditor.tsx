@@ -10,6 +10,7 @@ import {
   themeQuartz,
 } from 'ag-grid-community';
 import Papa from 'papaparse';
+import { useIsDarkMode } from '../hooks/useTheme';
 
 const SHARED_THEME_PARAMS = {
   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
@@ -39,20 +40,6 @@ const darkTheme = themeQuartz.withPart(colorSchemeDark).withParams({
 const AG_MODULES = [AllCommunityModule];
 const DEFAULT_COL_DEF: ColDef = { flex: 1, minWidth: 100, resizable: true };
 const ROW_NUM_CELL_STYLE = { color: '#a1a1aa', textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const };
-
-function useIsDarkMode() {
-  const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
-
-  useEffect(() => {
-    const observer = new MutationObserver(() => {
-      setDark(document.documentElement.classList.contains('dark'));
-    });
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-    return () => observer.disconnect();
-  }, []);
-
-  return dark;
-}
 
 type ParsedCsv = {
   headers: string[];

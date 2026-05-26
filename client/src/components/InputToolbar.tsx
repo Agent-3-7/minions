@@ -161,12 +161,11 @@ export const REASONING_LABELS: Record<ReasoningEffort, string> = {
   xhigh: 'X-High',
 };
 
-const MODEL_PICKER_DEFAULT_GROUP_ID = 'special:default';
-const MODEL_PICKER_RECENT_GROUP_ID = 'special:recent';
+const MODEL_PICKER_CURRENT_GROUP_ID = 'special:current';
 const MODEL_PICKER_SEARCH_GROUP_ID = 'special:search';
 const MODEL_PICKER_MIN_WIDTH = 620;
 const MODEL_PICKER_MAX_HEIGHT = 410;
-const RECENT_MODELS_STORAGE_KEY = 'minions.recentModels';
+const RECENT_MODELS_STORAGE_KEY = 'agentcontrol.recentModels';
 const MAX_RECENT_MODELS = 5;
 
 function parseSearchTerms(query: string): string[] {
@@ -177,12 +176,6 @@ function matchesAllTerms(searchable: string, terms: string[]): boolean {
   if (terms.length === 0) return true;
   const lower = searchable.toLowerCase();
   return terms.every((term) => lower.includes(term));
-}
-
-function compactControlLabel(label: string): string {
-  if (label.startsWith('Inherit: ')) return label.slice('Inherit: '.length);
-  if (label === 'Inherit default') return 'Default';
-  return label;
 }
 
 interface ToolbarSelectOption {
@@ -198,6 +191,7 @@ interface ToolbarSelectProps {
   disabled?: boolean;
   title: string;
   labelMaxWidthClass?: string;
+  compactMobile?: boolean;
   minMenuWidth?: number;
   searchable?: boolean;
   searchPlaceholder?: string;
@@ -211,6 +205,7 @@ function ToolbarSelect({
   disabled = false,
   title,
   labelMaxWidthClass = 'max-w-[11rem] sm:max-w-[14rem]',
+  compactMobile = false,
   minMenuWidth = 180,
   searchable = false,
   searchPlaceholder = 'Search...',
@@ -365,6 +360,7 @@ function ToolbarSelect({
         type="button"
         disabled={disabled}
         title={title}
+        aria-label={compactMobile ? title : undefined}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
@@ -375,18 +371,20 @@ function ToolbarSelect({
             setOpen(true);
           }
         }}
-        className="inline-flex h-9 max-w-full items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2.5 text-xs font-medium text-zinc-600 shadow-sm transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700/70"
+        className={`inline-flex h-9 min-w-0 max-w-full items-center gap-1.5 rounded-lg border border-zinc-200 bg-white text-xs font-medium text-zinc-600 shadow-sm transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700/70 ${
+          compactMobile ? 'w-9 justify-center px-0 sm:w-auto sm:justify-start sm:px-2.5' : 'px-2.5'
+        }`}
       >
         <Icon size={12} className="shrink-0" />
-        <span className="min-w-0 max-w-[4rem] truncate sm:hidden">
-          {compactControlLabel(selectedLabel)}
+        <span className={compactMobile ? 'sr-only sm:hidden' : 'min-w-0 max-w-[4rem] truncate sm:hidden'}>
+          {selectedLabel}
         </span>
         <span className={`hidden min-w-0 truncate sm:block ${labelMaxWidthClass}`}>
           {selectedLabel}
         </span>
         <ChevronDown
           size={13}
-          className={`shrink-0 text-zinc-400 transition-transform dark:text-zinc-500 ${open ? 'rotate-180' : ''}`}
+          className={`shrink-0 text-zinc-400 transition-transform dark:text-zinc-500 ${compactMobile ? 'hidden sm:block' : ''} ${open ? 'rotate-180' : ''}`}
         />
       </button>
 
@@ -481,17 +479,19 @@ export interface ModelPickerSelection {
 interface ModelPickerGroup {
   id: string;
   label: string;
-  kind: 'default' | 'recent' | 'provider' | 'search';
+  kind: 'current' | 'provider' | 'search';
   models: ModelPickerItem[];
 }
 
 export interface ModelPickerProps {
   value: string;
-  defaultModel: string | null;
+  provider?: string | null;
+  fallback?: string | null;
+  fallbackProvider?: string | null;
   modelGroups: AgentModelGroup[];
   disabled?: boolean;
   title: string;
-  showInheritOption?: boolean;
+  compactMobile?: boolean;
   onChange: (value: string, selection?: ModelPickerSelection) => void;
 }
 
@@ -510,58 +510,69 @@ function providerGroupId(provider: string): string {
   return `provider:${provider}`;
 }
 
-function readRecentModels(): string[] {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(RECENT_MODELS_STORAGE_KEY) ?? '[]');
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((item): item is string => typeof item === 'string' && item.length > 0).slice(0, MAX_RECENT_MODELS);
-  } catch {
-    return [];
-  }
-}
-
-function writeRecentModels(modelIds: string[]) {
-  try {
-    localStorage.setItem(RECENT_MODELS_STORAGE_KEY, JSON.stringify(modelIds.slice(0, MAX_RECENT_MODELS)));
-  } catch {
-    // Recent models are a convenience only.
-  }
-}
-
 function modelMatchesTerms(model: ModelPickerItem, terms: string[]): boolean {
-  return matchesAllTerms([model.label, model.value, model.provider].join(' '), terms);
+  return matchesAllTerms([model.label, model.value, model.provider, model.providerId ?? ''].join(' '), terms);
 }
 
 function modelRowKey(model: ModelPickerItem): string {
   return `${model.provider}:${model.value}`;
 }
 
-function findInitialModelGroupId(groups: ModelPickerGroup[], value: string): string {
-  if (!value) return MODEL_PICKER_DEFAULT_GROUP_ID;
+export function parseQualifiedModelValue(value: string): { provider: string; model: string } | null {
+  if (!value.startsWith('@')) return null;
+  const separator = value.indexOf(':');
+  if (separator <= 1 || separator === value.length - 1) return null;
+  return {
+    provider: value.slice(1, separator),
+    model: value.slice(separator + 1),
+  };
+}
 
-  return (
-    groups.find((group) => group.kind === 'provider' && group.models.some((model) => model.value === value))?.id
-    ?? groups.find((group) => group.kind === 'recent' && group.models.some((model) => model.value === value))?.id
-    ?? groups.find((group) => group.models.some((model) => model.value === value))?.id
-    ?? MODEL_PICKER_DEFAULT_GROUP_ID
-  );
+function modelMatchesValue(model: ModelPickerItem, value: string, provider?: string | null): boolean {
+  if (!value) return false;
+
+  const parsed = parseQualifiedModelValue(value);
+  if (parsed) {
+    return model.providerId === parsed.provider && model.value === parsed.model;
+  }
+
+  if (model.value !== value) return false;
+  if (!provider) return true;
+  return model.providerId === provider;
+}
+
+function findModelForValue(groups: ModelPickerGroup[], value: string, provider?: string | null): ModelPickerItem | undefined {
+  for (const group of groups) {
+    for (const model of group.models) {
+      if (modelMatchesValue(model, value, provider)) return model;
+    }
+  }
+  return undefined;
+}
+
+function findInitialModelGroupId(groups: ModelPickerGroup[], value: string, provider?: string | null): string {
+  if (!value) return groups[0]?.id ?? '';
+  return groups.find((group) => group.models.some((model) => modelMatchesValue(model, value, provider)))?.id
+    ?? groups[0]?.id
+    ?? '';
 }
 
 export function ModelPicker({
   value,
-  defaultModel,
+  provider = null,
+  fallback = null,
+  fallbackProvider = null,
   modelGroups,
   disabled = false,
   title,
-  showInheritOption = true,
+  compactMobile = false,
   onChange,
 }: ModelPickerProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [activeGroupId, setActiveGroupId] = useState(MODEL_PICKER_DEFAULT_GROUP_ID);
+  const [activeGroupId, setActiveGroupId] = useState('');
   const [activeModelIndex, setActiveModelIndex] = useState(0);
   const [menuStyle, setMenuStyle] = useState<React.CSSProperties | null>(null);
-  const [recentModelIds, setRecentModelIds] = useState<string[]>([]);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -569,31 +580,9 @@ export function ModelPicker({
   const activeModelIndexRef = useRef(0);
   activeModelIndexRef.current = activeModelIndex;
 
-  const selectedModelMissing = !hasModel(modelGroups, value || null);
+  const displayValue = value || fallback || '';
+  const displayProvider = value ? provider : fallbackProvider;
   const groups = useMemo<ModelPickerGroup[]>(() => {
-    const defaultGroup: ModelPickerGroup = {
-      id: MODEL_PICKER_DEFAULT_GROUP_ID,
-      label: 'Default',
-      kind: 'default',
-      models: [
-        {
-          value: '',
-          label: defaultModel ? `Inherit: ${defaultModel}` : 'Inherit default',
-          provider: 'Default',
-          providerId: null,
-        },
-      ],
-    };
-
-    if (selectedModelMissing && value) {
-      defaultGroup.models.push({
-        value,
-        label: value,
-        provider: 'Current',
-        providerId: null,
-      });
-    }
-
     const providerGroups: ModelPickerGroup[] = modelGroups.map((group) => {
       const providerLabel = formatProviderLabel(group.provider);
       return {
@@ -610,43 +599,25 @@ export function ModelPicker({
       };
     });
 
-    const modelLookup = new Map<string, ModelPickerItem>();
-    for (const group of providerGroups) {
-      for (const model of group.models) {
-        if (!modelLookup.has(model.value)) modelLookup.set(model.value, model);
-      }
-    }
-
-    const recentModels = recentModelIds
-      .map((modelId) => modelLookup.get(modelId) ?? (modelId === value ? {
-        value: modelId,
-        label: modelId,
-        provider: 'Recent',
-        providerId: null,
-      } : null))
-      .filter((model): model is ModelPickerItem => Boolean(model));
+    const valueMissing = Boolean(value)
+      && !providerGroups.some((group) => group.models.some((model) => modelMatchesValue(model, value, provider)));
+    if (!valueMissing) return providerGroups;
 
     return [
-      ...(showInheritOption ? [defaultGroup] : []),
-      ...(recentModels.length > 0 ? [{
-        id: MODEL_PICKER_RECENT_GROUP_ID,
-        label: 'Recent',
-        kind: 'recent' as const,
-        models: recentModels,
-      }] : []),
+      {
+        id: MODEL_PICKER_CURRENT_GROUP_ID,
+        label: 'Current',
+        kind: 'current' as const,
+        models: [{
+          value,
+          label: value,
+          provider: 'Current',
+          providerId: provider ?? null,
+        }],
+      },
       ...providerGroups,
     ];
-  }, [defaultModel, modelGroups, recentModelIds, selectedModelMissing, showInheritOption, value]);
-
-  const modelLookup = useMemo(() => {
-    const map = new Map<string, ModelPickerItem>();
-    for (const group of groups) {
-      for (const model of group.models) {
-        if (!map.has(model.value)) map.set(model.value, model);
-      }
-    }
-    return map;
-  }, [groups]);
+  }, [modelGroups, value, provider]);
 
   const searchTerms = useMemo(() => parseSearchTerms(query), [query]);
   const searching = searchTerms.length > 0;
@@ -654,7 +625,6 @@ export function ModelPicker({
     if (!searching) return [];
 
     return groups
-      .filter((group) => group.kind !== 'recent')
       .map((group) => ({
         ...group,
         models: group.models.filter((model) => modelMatchesTerms(model, searchTerms)),
@@ -682,14 +652,11 @@ export function ModelPicker({
     [navigationGroups, activeGroupId],
   );
   const visibleModels = useMemo(() => activeGroup?.models ?? [], [activeGroup]);
-  const selectedModel = modelLookup.get(value);
-  const selectedLabel = (() => {
-    if (selectedModel?.label) return selectedModel.label;
-    if (value) return value;
-    if (!showInheritOption) return 'Select model';
-    return defaultModel ? `Inherit: ${defaultModel}` : 'Inherit default';
-  })();
-  const compactSelectedLabel = compactControlLabel(selectedLabel);
+  const selectedModel = useMemo(
+    () => findModelForValue(groups, displayValue, displayProvider),
+    [groups, displayValue, displayProvider],
+  );
+  const selectedLabel = (selectedModel?.label ?? displayValue) || 'Select model';
 
   const updatePosition = useCallback(() => {
     const trigger = triggerRef.current;
@@ -729,44 +696,36 @@ export function ModelPicker({
 
   const choose = useCallback((model: ModelPickerItem) => {
     onChange(model.value, { provider: model.providerId ?? null });
-    if (model.value) {
-      setRecentModelIds((current) => {
-        const next = [model.value, ...current.filter((modelId) => modelId !== model.value)].slice(0, MAX_RECENT_MODELS);
-        writeRecentModels(next);
-        return next;
-      });
-    }
     setOpen(false);
     triggerRef.current?.focus();
   }, [onChange]);
-
-  useEffect(() => {
-    setRecentModelIds(readRecentModels());
-  }, []);
 
   useLayoutEffect(() => {
     if (!open) return;
     updatePosition();
   }, [navigationGroups.length, open, updatePosition, visibleModels.length]);
 
-  useEffect(() => {
-    if (!open) return;
-    setQuery('');
-    setActiveGroupId(findInitialModelGroupId(groups, value));
-    window.requestAnimationFrame(() => searchRef.current?.focus());
-  }, [groups, open, value]);
+  const wasOpenRef = useRef(false);
+  useLayoutEffect(() => {
+    if (open && !wasOpenRef.current) {
+      setQuery('');
+      setActiveGroupId(findInitialModelGroupId(groups, displayValue, displayProvider));
+      window.requestAnimationFrame(() => searchRef.current?.focus());
+    }
+    wasOpenRef.current = open;
+  }, [open, groups, displayValue, displayProvider]);
 
   useEffect(() => {
     if (!open) return;
     if (navigationGroups.some((group) => group.id === activeGroupId)) return;
-    setActiveGroupId(navigationGroups[0]?.id ?? MODEL_PICKER_DEFAULT_GROUP_ID);
-  }, [activeGroupId, navigationGroups, open]);
+    setActiveGroupId(findInitialModelGroupId(navigationGroups, displayValue, displayProvider));
+  }, [activeGroupId, displayValue, displayProvider, navigationGroups, open]);
 
   useEffect(() => {
     if (!open) return;
-    const selectedIndex = visibleModels.findIndex((model) => model.value === value);
+    const selectedIndex = visibleModels.findIndex((model) => modelMatchesValue(model, displayValue, displayProvider));
     setActiveModelIndex(Math.max(0, selectedIndex));
-  }, [activeGroupId, open, value, visibleModels]);
+  }, [activeGroupId, open, displayValue, displayProvider, visibleModels]);
 
   useEffect(() => {
     if (!open) return;
@@ -862,11 +821,11 @@ export function ModelPicker({
             setOpen(true);
           }
         }}
-        className="inline-flex h-9 max-w-full items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2.5 text-xs font-medium text-zinc-600 shadow-sm transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700/70"
+        className="inline-flex h-9 min-w-0 max-w-full items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2.5 text-xs font-medium text-zinc-600 shadow-sm transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700/70"
       >
         <Sparkles size={12} className="shrink-0" />
-        <span className="min-w-0 max-w-[5.75rem] truncate sm:hidden">
-          {compactSelectedLabel}
+        <span className={`min-w-0 truncate sm:hidden ${compactMobile ? 'max-w-[4.25rem]' : 'max-w-[5.75rem]'}`}>
+          {selectedLabel}
         </span>
         <span className="hidden min-w-0 max-w-[18rem] truncate sm:block">
           {selectedLabel}
@@ -945,7 +904,7 @@ export function ModelPicker({
                   </div>
                 ) : (
                   visibleModels.map((model, index) => {
-                    const selected = model.value === value;
+                    const selected = modelMatchesValue(model, displayValue, displayProvider);
                     const active = index === activeModelIndex;
 
                     return (
@@ -996,19 +955,16 @@ export function ModelPicker({
 
 interface InputToolbarProps {
   model: string | null;
+  provider?: string | null;
   reasoningEffort: ReasoningEffort | null;
   runMode?: ChatRunMode;
   defaults?: AgentDefaults | null;
   modelGroups?: AgentModelGroup[];
   disabled?: boolean;
-  onModelChange: (model: string | null) => void;
+  compactMobile?: boolean;
+  onModelChange: (model: string | null, provider?: string | null) => void;
   onReasoningEffortChange: (effort: ReasoningEffort | null) => void;
   onRunModeChange?: (mode: ChatRunMode) => void;
-}
-
-function hasModel(groups: AgentModelGroup[] | undefined, model: string | null): boolean {
-  if (!model) return true;
-  return Boolean(groups?.some((group) => group.models.some((option) => option.id === model)));
 }
 
 function LoadingToolbarButton({
@@ -1034,10 +990,12 @@ function LoadingToolbarButton({
 function GoalModeToggle({
   value,
   disabled = false,
+  compactMobile = false,
   onChange,
 }: {
   value: ChatRunMode;
   disabled?: boolean;
+  compactMobile?: boolean;
   onChange: (value: ChatRunMode) => void;
 }) {
   const active = value === 'goal';
@@ -1053,14 +1011,16 @@ function GoalModeToggle({
         aria-describedby={tooltipId}
         aria-label={`${active ? 'Turn off' : 'Turn on'} goal mode. Shortcut: ${GOAL_MODE_SHORTCUT_LABEL}`}
         onClick={() => onChange(active ? 'task' : 'goal')}
-        className={`inline-flex h-9 max-w-full items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+        className={`inline-flex h-9 max-w-full items-center gap-1.5 rounded-lg border text-xs font-semibold shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+          compactMobile ? 'w-9 justify-center px-0 sm:w-auto sm:justify-start sm:px-2.5' : 'px-2.5'
+        } ${
           active
             ? 'border-zinc-500 bg-zinc-100 text-zinc-950 ring-2 ring-zinc-900/10 hover:bg-zinc-200 dark:border-zinc-400 dark:bg-zinc-700 dark:text-zinc-50 dark:ring-white/10 dark:hover:bg-zinc-600'
             : 'border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700/70'
         }`}
       >
         <Target size={12} className="shrink-0" strokeWidth={2.5} />
-        <span>Goal</span>
+        <span className={compactMobile ? 'sr-only sm:not-sr-only' : undefined}>Goal</span>
       </button>
       <div
         id={tooltipId}
@@ -1081,33 +1041,31 @@ function GoalModeToggle({
   );
 }
 
+const REASONING_OPTIONS: ToolbarSelectOption[] = REASONING_EFFORTS.map((effort) => ({
+  value: effort,
+  label: REASONING_LABELS[effort],
+}));
+
 export function InputToolbar({
   model,
+  provider = null,
   reasoningEffort,
   runMode,
   defaults,
   modelGroups = [],
   disabled = false,
+  compactMobile = false,
   onModelChange,
   onReasoningEffortChange,
   onRunModeChange,
 }: InputToolbarProps) {
   const defaultModel = defaults?.model ?? null;
-  const defaultReasoning = defaults?.reasoningEffort ?? null;
-  const reasoningOptions = useMemo<ToolbarSelectOption[]>(() => [
-    {
-      value: '',
-      label: defaultReasoning ? `Inherit: ${REASONING_LABELS[defaultReasoning]}` : 'Inherit default',
-    },
-    ...REASONING_EFFORTS.map((effort) => ({
-      value: effort,
-      label: REASONING_LABELS[effort],
-    })),
-  ], [defaultReasoning]);
+  const defaultProvider = defaults?.provider ?? null;
+  const effectiveReasoning = reasoningEffort ?? defaults?.reasoningEffort ?? 'medium';
 
   if (!defaults) {
     return (
-      <div className="flex items-center gap-2 min-w-0 flex-wrap">
+      <div className={`flex min-w-0 items-center gap-2 ${compactMobile ? 'flex-nowrap' : 'flex-wrap'}`}>
         <LoadingToolbarButton icon={Sparkles} className="[&>span]:w-24" />
         <LoadingToolbarButton icon={Zap} className="[&>span]:w-14" />
       </div>
@@ -1115,30 +1073,35 @@ export function InputToolbar({
   }
 
   return (
-    <div className="flex items-center gap-2 min-w-0 flex-wrap">
+    <div className={`flex min-w-0 items-center gap-2 ${compactMobile ? 'flex-nowrap' : 'flex-wrap'}`}>
       <ModelPicker
         value={model ?? ''}
-        defaultModel={defaultModel}
+        provider={provider}
+        fallback={defaultModel}
+        fallbackProvider={defaultProvider}
         modelGroups={modelGroups}
         disabled={disabled}
-        title={model ? `Model: ${model}` : defaultModel ? `Inherits ${defaultModel}` : 'Inherits default model'}
-        onChange={(nextModel) => onModelChange(nextModel || null)}
+        title={model ? `Model: ${model}` : defaultModel ? `Default: ${defaultModel}` : 'Select model'}
+        compactMobile={compactMobile}
+        onChange={(nextModel, selection) => onModelChange(nextModel || null, selection?.provider ?? null)}
       />
 
       <ToolbarSelect
         icon={Zap}
-        value={reasoningEffort ?? ''}
-        options={reasoningOptions}
+        value={effectiveReasoning}
+        options={REASONING_OPTIONS}
         disabled={disabled}
-        title={reasoningEffort ? `Reasoning: ${reasoningEffort}` : defaultReasoning ? `Inherits ${defaultReasoning}` : 'Inherits default reasoning'}
+        title={`Reasoning: ${REASONING_LABELS[effectiveReasoning]}`}
+        compactMobile={compactMobile}
         minMenuWidth={180}
-        onChange={(nextReasoning) => onReasoningEffortChange((nextReasoning || null) as ReasoningEffort | null)}
+        onChange={(nextReasoning) => onReasoningEffortChange(nextReasoning as ReasoningEffort)}
       />
 
       {runMode && onRunModeChange && (
         <GoalModeToggle
           value={runMode}
           disabled={disabled}
+          compactMobile={compactMobile}
           onChange={onRunModeChange}
         />
       )}

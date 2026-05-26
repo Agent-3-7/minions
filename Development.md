@@ -17,4 +17,4 @@ npm publish        # prepublishOnly runs the build automatically
 git push --follow-tags
 ```
 
-End users install with `npx minionsai` — see [README.md](README.md).
+End users install with `npx agentcontrolai` — see [README.md](README.md).

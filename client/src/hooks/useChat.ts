@@ -43,6 +43,7 @@ function compactSettings(settings?: AgentRunSettings): AgentRunSettings | undefi
   if (!settings) return undefined;
   const compacted: AgentRunSettings = {};
   if (settings.model != null) compacted.model = settings.model;
+  if (settings.provider != null) compacted.provider = settings.provider;
   if (settings.reasoningEffort != null) compacted.reasoningEffort = settings.reasoningEffort;
   if (settings.mode != null) compacted.mode = settings.mode;
   return Object.keys(compacted).length > 0 ? compacted : undefined;

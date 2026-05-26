@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ArrowUp, Loader2 } from 'lucide-react';
 import { InputToolbar } from './InputToolbar';
 import { AttachButton, AttachDropOverlay, AttachmentTray, UploadErrorBar } from './ChatAttachments';
@@ -10,12 +10,24 @@ import { isEditableTarget, handleChatKeyDown, toggleRunMode } from '../lib/keybo
 import { GOAL_MODE_PLACEHOLDER, toErrorMessage } from '../lib/format';
 import type { ChatRunMode } from '@shared/types';
 
+type NewTaskLocationState = {
+  draft?: string;
+} | null;
+
+function draftFromLocationState(state: unknown): string {
+  const draft = (state as NewTaskLocationState)?.draft;
+  return typeof draft === 'string' ? draft : '';
+}
+
 export function NewTaskPage() {
   const navigate = useNavigate();
-  const [input, setInput] = useState('');
+  const location = useLocation();
+  const initialDraftRef = useRef(draftFromLocationState(location.state));
+  const lastAppliedKeyRef = useRef(location.key);
+  const [input, setInput] = useState(initialDraftRef.current);
   const [runMode, setRunMode] = useState<ChatRunMode>('task');
   const [isCreating, setIsCreating] = useState(false);
-  const { defaults, modelGroups, model, setModel, reasoningEffort, setReasoningEffort, isLoading } = useAgentConfig();
+  const { defaults, modelGroups, model, setModel, provider, setProvider, reasoningEffort, setReasoningEffort, isLoading } = useAgentConfig();
   const uploadBucketRef = useRef<string | null>(null);
   if (uploadBucketRef.current === null) uploadBucketRef.current = `draft-${crypto.randomUUID()}`;
   const uploadBucketId = uploadBucketRef.current;
@@ -41,6 +53,15 @@ export function NewTaskPage() {
   }, []);
 
   useEffect(() => {
+    if (lastAppliedKeyRef.current === location.key) return;
+    lastAppliedKeyRef.current = location.key;
+    const nextDraft = draftFromLocationState(location.state);
+    if (!nextDraft) return;
+    setInput(nextDraft);
+    inputRef.current?.focus();
+  }, [location.key, location.state]);
+
+  useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape' && !isEditableTarget(e.target)) navigate('/');
     }
@@ -62,14 +83,14 @@ export function NewTaskPage() {
       navigate(`/tasks/${task.id}`, {
         state: {
           initialMessage,
-          initialSettings: { model, reasoningEffort, mode: runMode },
+          initialSettings: { model, provider, reasoningEffort, mode: runMode },
         },
       });
     } catch (err) {
       setUploadError(toErrorMessage(err, 'Failed to create task'));
       setIsCreating(false);
     }
-  }, [defaults, uploadBlocksSend, input, isCreating, isLoading, model, navigate, pendingFiles, reasoningEffort, runMode, submitWithAttachments, setUploadError]);
+  }, [defaults, uploadBlocksSend, input, isCreating, isLoading, model, provider, navigate, pendingFiles, reasoningEffort, runMode, submitWithAttachments, setUploadError]);
 
   const handleToggleGoalMode = useCallback(() => setRunMode(toggleRunMode), []);
 
@@ -102,17 +123,22 @@ export function NewTaskPage() {
           />
           <AttachmentTray files={pendingFiles} onRemove={removeFile} onRetry={retryFile} />
           {uploadError && <UploadErrorBar error={uploadError} onDismiss={() => setUploadError(null)} />}
-          <div className="flex items-center justify-between gap-3 px-4 pb-3">
-            <div className="flex min-w-0 items-center gap-2">
+          <div className="flex items-center justify-between gap-2 px-3 pb-3 sm:gap-3 sm:px-4">
+            <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
               <AttachButton onFiles={addFiles} disabled={isCreating} />
               <InputToolbar
                 model={model}
+                provider={provider}
                 reasoningEffort={reasoningEffort}
                 runMode={runMode}
                 defaults={defaults}
                 modelGroups={modelGroups}
                 disabled={isCreating}
-                onModelChange={setModel}
+                compactMobile
+                onModelChange={(nextModel, nextProvider) => {
+                  setModel(nextModel);
+                  setProvider(nextProvider ?? null);
+                }}
                 onReasoningEffortChange={setReasoningEffort}
                 onRunModeChange={setRunMode}
               />
@@ -122,7 +148,7 @@ export function NewTaskPage() {
               disabled={(!input.trim() && pendingFiles.length === 0) || isCreating || (!defaults && isLoading) || uploadBlocksSend}
               title={sendBlockedLabel ?? 'Send message'}
               aria-label={sendBlockedLabel ?? 'Send message'}
-              className="p-2.5 rounded-full bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 disabled:opacity-30 hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors"
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white transition-colors hover:bg-zinc-700 disabled:opacity-30 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
             >
               {isCreating || hasUploadingFiles ? (
                 <Loader2 size={16} className="animate-spin" />

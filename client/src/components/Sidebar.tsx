@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
-import { SquarePen, Columns3, Settings, PanelLeftClose, PanelLeft, Repeat, Sparkles, Folder } from 'lucide-react';
+import { SquarePen, Columns3, Settings, PanelLeftClose, PanelLeft, Repeat, Sparkles, Folder, TerminalSquare } from 'lucide-react';
 import { useStore } from '../lib/store';
 import { isEditableTarget } from '../lib/keyboard';
 
@@ -55,6 +55,7 @@ export function Sidebar() {
 
   const isActive = (path: string) => {
     if (path === '/') return location.pathname === '/' || (location.pathname.startsWith('/tasks/') && location.pathname !== '/tasks/new');
+    if (path === '/scheduled-tasks') return location.pathname === path || location.pathname.startsWith('/scheduled-tasks/');
     return location.pathname === path;
   };
 
@@ -91,59 +92,104 @@ export function Sidebar() {
         )}
       </div>
 
-      <nav
-        aria-label="Primary"
-        className={`flex h-[3.75rem] items-center justify-around gap-1 px-2 sm:block sm:h-auto sm:space-y-1 ${
+      <div
+        className={`flex h-[3.75rem] items-center justify-around gap-1 px-2 sm:flex-1 sm:flex-col sm:items-stretch sm:justify-start sm:gap-0 sm:h-auto ${
           desktopCollapsed ? 'sm:px-2' : 'sm:px-3'
         }`}
       >
-        <SidebarLink
-          icon={<SquarePen size={18} />}
-          label="New Task"
-          mobileLabel="New"
-          to="/tasks/new"
-          active={isActive('/tasks/new')}
-          collapsed={desktopCollapsed}
-          shortcut={isMac ? '⇧⌘O' : 'Ctrl+⇧+O'}
-        />
-        <SidebarLink
-          icon={<Columns3 size={18} />}
-          label="Tasks"
-          to="/"
-          active={isActive('/')}
-          collapsed={desktopCollapsed}
-          shortcut={['G', 'T']}
-        />
-        <SidebarLink
-          icon={<Folder size={18} />}
-          label="Files"
-          to="/files"
-          active={isActive('/files')}
-          collapsed={desktopCollapsed}
-          shortcut={['G', 'F']}
-        />
-        <SidebarLink
-          icon={<Repeat size={18} />}
-          label="Scheduled Tasks"
-          to="/scheduled-tasks"
-          active={isActive('/scheduled-tasks')}
-          collapsed={desktopCollapsed}
-        />
-        <SidebarLink
-          icon={<Sparkles size={18} />}
-          label="Skills"
-          to="/skills/browse"
-          active={location.pathname === '/skills' || location.pathname.startsWith('/skills/')}
-          collapsed={desktopCollapsed}
-        />
-        <SidebarLink
-          icon={<Settings size={18} />}
-          label="Settings"
-          to="/settings"
-          active={isActive('/settings')}
-          collapsed={desktopCollapsed}
-        />
-      </nav>
+        <nav
+          aria-label="Primary"
+          className="flex h-full flex-1 items-center justify-around gap-1 sm:block sm:h-auto sm:flex-none sm:space-y-1"
+        >
+          <SidebarLink
+            icon={<SquarePen size={18} />}
+            label="New Task"
+            mobileLabel="New"
+            to="/tasks/new"
+            active={isActive('/tasks/new')}
+            collapsed={desktopCollapsed}
+            shortcut={isMac ? '⇧⌘O' : 'Ctrl+⇧+O'}
+          />
+          <SidebarLink
+            icon={<Columns3 size={18} />}
+            label="Tasks"
+            to="/"
+            active={isActive('/')}
+            collapsed={desktopCollapsed}
+            shortcut={['G', 'T']}
+          />
+          <SidebarLink
+            icon={<Repeat size={18} />}
+            label="Recurring"
+            to="/scheduled-tasks"
+            active={isActive('/scheduled-tasks')}
+            collapsed={desktopCollapsed}
+          />
+          <SidebarLink
+            icon={<Folder size={18} />}
+            label="Files"
+            to="/files"
+            active={isActive('/files')}
+            collapsed={desktopCollapsed}
+            shortcut={['G', 'F']}
+          />
+          <SidebarLink
+            icon={<Sparkles size={18} />}
+            label="Skills"
+            to="/skills/browse"
+            active={location.pathname === '/skills' || location.pathname.startsWith('/skills/')}
+            collapsed={desktopCollapsed}
+            className="sm:hidden"
+          />
+          <SidebarLink
+            icon={<Settings size={18} />}
+            label="Settings"
+            to="/settings"
+            active={isActive('/settings')}
+            collapsed={desktopCollapsed}
+            className="sm:hidden"
+          />
+        </nav>
+
+        <div className="hidden sm:block sm:mt-7">
+          {!desktopCollapsed ? (
+            <div className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-600">
+              Advanced
+            </div>
+          ) : (
+            <div className="mx-3 mb-2 h-px bg-zinc-200 dark:bg-zinc-800" />
+          )}
+          <nav aria-label="Advanced" className="space-y-1">
+            <SidebarLink
+              icon={<Sparkles size={18} />}
+              label="Skills"
+              to="/skills/browse"
+              active={location.pathname === '/skills' || location.pathname.startsWith('/skills/')}
+              collapsed={desktopCollapsed}
+              subdued
+            />
+            <SidebarLink
+              icon={<TerminalSquare size={18} />}
+              label="Terminal"
+              to="/terminal"
+              active={isActive('/terminal')}
+              collapsed={desktopCollapsed}
+              subdued
+            />
+          </nav>
+        </div>
+
+        <nav aria-label="System" className="mt-auto hidden pb-3 sm:block sm:space-y-1">
+          <SidebarLink
+            icon={<Settings size={18} />}
+            label="Settings"
+            to="/settings"
+            active={isActive('/settings')}
+            collapsed={desktopCollapsed}
+            subdued
+          />
+        </nav>
+      </div>
 
     </aside>
   );
@@ -157,6 +203,8 @@ function SidebarLink({
   active,
   collapsed,
   shortcut,
+  className,
+  subdued = false,
 }: {
   icon: React.ReactNode;
   label: string;
@@ -165,6 +213,8 @@ function SidebarLink({
   active: boolean;
   collapsed: boolean;
   shortcut?: string | string[];
+  className?: string;
+  subdued?: boolean;
 }) {
   return (
     <Link
@@ -175,8 +225,10 @@ function SidebarLink({
       } ${
         active
           ? 'bg-zinc-100 text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-100 sm:bg-surface'
-          : 'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 sm:text-zinc-700 sm:dark:text-zinc-300 sm:hover:bg-surface'
-      }`}
+          : subdued
+            ? 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 sm:text-zinc-600 sm:dark:text-zinc-400 sm:hover:bg-surface'
+            : 'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 sm:text-zinc-700 sm:dark:text-zinc-300 sm:hover:bg-surface'
+      } ${className ?? ''}`}
     >
       <span className={active ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 dark:text-zinc-400'}>
         {icon}

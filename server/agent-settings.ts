@@ -4,6 +4,7 @@ import { isRecord } from './errors.js';
 
 export interface AgentSettingsUpdate {
   agent_model?: string | null;
+  agent_provider?: string | null;
   reasoning_effort?: ReasoningEffort | null;
 }
 
@@ -31,6 +32,14 @@ function normalizeModel(value: unknown): string | null | undefined {
   return trimmed || null;
 }
 
+function normalizeProvider(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value !== 'string') throw new Error('provider must be a string or null');
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
 function normalizeReasoningEffort(value: unknown): ReasoningEffort | null | undefined {
   if (value === undefined) return undefined;
   if (value === null) return null;
@@ -43,10 +52,12 @@ function normalizeReasoningEffort(value: unknown): ReasoningEffort | null | unde
 function parseSettingsFields(body: unknown): AgentSettingsUpdate {
   const record = isRecord(body) ? body : {};
   const model = normalizeModel(firstPresent(record, ['agentModel', 'agent_model', 'model']));
+  const provider = normalizeProvider(firstPresent(record, ['agentProvider', 'agent_provider', 'provider']));
   const reasoningEffort = normalizeReasoningEffort(firstPresent(record, ['reasoningEffort', 'reasoning_effort']));
 
   return {
     ...(model !== undefined ? { agent_model: model } : {}),
+    ...(provider !== undefined ? { agent_provider: provider } : {}),
     ...(reasoningEffort !== undefined ? { reasoning_effort: reasoningEffort } : {}),
   };
 }
@@ -54,6 +65,7 @@ function parseSettingsFields(body: unknown): AgentSettingsUpdate {
 export function taskRunSettings(task: Task): AgentRunSettings {
   return {
     model: task.agent_model,
+    provider: task.agent_provider,
     reasoningEffort: task.reasoning_effort,
   };
 }

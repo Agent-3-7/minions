@@ -16,7 +16,7 @@ export type WorkerRequest =
   | { id: string; type: 'settings.get' }
   | { id: string; type: 'settings.set'; provider?: string | null; model?: string | null; reasoningEffort?: string | null }
   | { id: string; type: 'models.list' }
-  | { id: string; type: 'scheduledTasks.list'; includeDisabled?: boolean }
+  | { id: string; type: 'scheduledTasks.list'; includeDisabled?: boolean; limit?: number }
   | { id: string; type: 'scheduledTasks.get'; scheduledTaskId: string }
   | { id: string; type: 'scheduledTasks.create' } & ScheduledTaskInput
   | { id: string; type: 'scheduledTasks.update'; scheduledTaskId: string } & Partial<ScheduledTaskInput>

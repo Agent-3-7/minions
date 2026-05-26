@@ -34,6 +34,7 @@ const compactMarkdownClassName = [
   '[&_ul]:mb-2 [&_ul:last-child]:mb-0 [&_ol]:mb-2 [&_ol:last-child]:mb-0',
   '[&_blockquote]:my-2',
   '[&_pre]:text-[13px] [&_code]:text-[13px]',
+  '[&>*:first-child]:mt-0 [&>*:last-child]:mb-0',
 ].join(' ');
 
 export const MarkdownContent = memo(function MarkdownContent({

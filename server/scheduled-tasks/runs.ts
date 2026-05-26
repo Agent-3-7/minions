@@ -59,10 +59,10 @@ async function readHead(path: string, maxBytes = 8192): Promise<string> {
   }
 }
 
-export async function listScheduledTaskRuns(scheduledTaskId: string, limit = 20): Promise<ScheduledTaskRun[]> {
+export async function listScheduledTaskRuns(scheduledTaskId: string, limit = 50): Promise<ScheduledTaskRun[]> {
   if (!isValidSegment(scheduledTaskId)) return [];
   const dir = join(resolveOutputDir(), scheduledTaskId);
-  const safeLimit = Math.max(1, Math.min(limit, 100));
+  const safeLimit = Math.max(1, Math.min(limit, 50));
 
   let names: string[];
   try {

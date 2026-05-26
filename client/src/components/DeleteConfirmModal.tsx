@@ -14,7 +14,7 @@ export function DeleteConfirmModal({
   onCancel,
   zIndex = 50,
   title = 'Delete task',
-  body = 'This removes the task from Minions. The Hermes session history remains in Hermes.',
+  body = 'This removes the task from AgentControl. The Hermes session history remains in Hermes.',
   confirmLabel = 'Delete',
   isConfirming = false,
   error = null,

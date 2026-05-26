@@ -1,15 +1,15 @@
-# iOS Safari Smoke Test — Jarvis Mission Control
+# iOS Safari Smoke Test — AgentControl
 
 ## Prerequisites
 - iPhone or iPad with iOS 17+
 - Safari on the iOS device
-- Jarvis Mission Control running via Cloudflare Tunnel or local dev reachable from the device
+- AgentControl running via Cloudflare Tunnel or local dev reachable from the device
 - Another client (desktop) to create/move tasks while the iOS device is in background
 
 ## Test Checklist
 
 ### 1. Viewport & Safe Area
-- [ ] Open Safari, navigate to the Jarvis URL (e.g. `https://ms.selly.dev`).
+- [ ] Open Safari, navigate to the AgentControl URL (e.g. `https://ms.selly.dev`).
 - [ ] Check: no horizontal overflow, board is scrollable only vertically.
 - [ ] Rotate to landscape: the board still renders columns with a min-width, is horizontally scrollable, and no content overlaps the notch or curved corners.
 - [ ] Dark mode switch in iOS Settings: board respects `prefers-color-scheme`.

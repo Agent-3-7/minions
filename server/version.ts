@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type { AppVersion } from '@shared/types';
 
 const FALLBACK_VERSION: AppVersion = {
-  name: 'minionsai',
+  name: 'AgentControl',
   version: 'unknown',
 };
 
@@ -19,7 +19,7 @@ function readAppVersion(): AppVersion {
       };
 
       return {
-        name: typeof parsed.name === 'string' ? parsed.name : FALLBACK_VERSION.name,
+        name: 'AgentControl',
         version: typeof parsed.version === 'string' ? parsed.version : FALLBACK_VERSION.version,
       };
     } catch {

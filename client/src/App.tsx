@@ -8,6 +8,7 @@ import { SettingsPage } from './components/SettingsPage';
 import { ScheduledTasksPage } from './components/ScheduledTasksPage';
 import { SkillsPage } from './components/SkillsPage';
 import { FileBrowserPage } from './components/FileBrowserPage';
+import { TerminalPage } from './components/TerminalPage';
 import { Toaster } from 'sonner';
 import { useTasks } from './hooks/useTasks';
 import { useTheme } from './hooks/useTheme';
@@ -36,6 +37,7 @@ function AppShell() {
             <Route path="/skills" element={<Navigate to="/skills/browse" replace />} />
             <Route path="/skills/:tab" element={<SkillsPage />} />
             <Route path="/files" element={<FileBrowserPage />} />
+            <Route path="/terminal" element={<TerminalPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </HeaderProvider>

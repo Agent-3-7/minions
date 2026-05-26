@@ -8,6 +8,7 @@ export function useAgentConfig(taskId?: string, initialSettings?: AgentRunSettin
   const [defaults, setDefaults] = useState<AgentDefaults | null>(() => readCachedAgentDefaults());
   const [modelGroups, setModelGroups] = useState<AgentModelGroup[]>([]);
   const [model, setModel] = useState<string | null>(initialSettings?.model ?? null);
+  const [provider, setProvider] = useState<string | null>(initialSettings?.provider ?? null);
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort | null>(initialSettings?.reasoningEffort ?? null);
   const [isLoading, setIsLoading] = useState(true);
   const initialRef = useRef(initialSettings);
@@ -26,6 +27,7 @@ export function useAgentConfig(taskId?: string, initialSettings?: AgentRunSettin
           writeCachedAgentDefaults(val.defaults);
           setDefaults(val.defaults);
           setModel(val.task.model ?? initialRef.current?.model ?? null);
+          setProvider(val.task.provider ?? initialRef.current?.provider ?? null);
           setReasoningEffort(val.task.reasoningEffort ?? initialRef.current?.reasoningEffort ?? null);
         } else {
           writeCachedAgentDefaults(val);
@@ -46,5 +48,5 @@ export function useAgentConfig(taskId?: string, initialSettings?: AgentRunSettin
     setDefaults(d);
   }, []);
 
-  return { defaults, modelGroups, model, setModel, reasoningEffort, setReasoningEffort, isLoading, replaceDefaults };
+  return { defaults, modelGroups, model, setModel, provider, setProvider, reasoningEffort, setReasoningEffort, isLoading, replaceDefaults };
 }

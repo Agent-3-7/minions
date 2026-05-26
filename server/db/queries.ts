@@ -23,13 +23,13 @@ const stmtTasksByStatus = db.prepare(`${TASK_SELECT_WITH_CHILD_COUNT} WHERE stat
 const stmtGetTask = db.prepare(`${TASK_SELECT_WITH_CHILD_COUNT} WHERE id = ?`);
 const stmtInsertTask = db.prepare(`
   INSERT INTO tasks (
-    id, title, description, status, agent_model, reasoning_effort,
+    id, title, description, status, agent_model, agent_provider, reasoning_effort,
     created_at, updated_at, last_agent_response_at, last_viewed_at,
     last_context_used_tokens, last_context_window_tokens,
     parent_task_id, priority, labels_json, assignee, delegation_status
   )
   VALUES (
-    @id, @title, @description, @status, @agent_model, @reasoning_effort,
+    @id, @title, @description, @status, @agent_model, @agent_provider, @reasoning_effort,
     @created_at, @updated_at, @last_agent_response_at, @last_viewed_at,
     @last_context_used_tokens, @last_context_window_tokens,
     @parent_task_id, @priority, @labels_json, @assignee, @delegation_status
@@ -59,6 +59,7 @@ export function insertTask(task: {
   description?: string | null;
   status: TaskStatus;
   agent_model?: string | null;
+  agent_provider?: string | null;
   reasoning_effort?: ReasoningEffort | null;
   last_agent_response_at?: number | null;
   parent_task_id?: string | null;
@@ -75,6 +76,7 @@ export function insertTask(task: {
     description: task.description ?? null,
     status: task.status,
     agent_model: task.agent_model ?? null,
+    agent_provider: task.agent_provider ?? null,
     reasoning_effort: task.reasoning_effort ?? null,
     created_at: now,
     updated_at: now,
@@ -97,6 +99,7 @@ const ALLOWED_UPDATE_FIELDS = new Set<string>([
   'description',
   'status',
   'agent_model',
+  'agent_provider',
   'reasoning_effort',
   'last_agent_response_at',
   'last_context_used_tokens',
@@ -115,6 +118,7 @@ type TaskUpdateFields = Pick<
   | 'description'
   | 'status'
   | 'agent_model'
+  | 'agent_provider'
   | 'reasoning_effort'
   | 'last_agent_response_at'
   | 'last_context_used_tokens'

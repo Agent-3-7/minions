@@ -137,7 +137,7 @@ function SubissueProgress({ task }: { task: Task }) {
   );
 }
 
-export function JarvisCard({ task, run }: { task: Task; run?: TaskRunState }) {
+export function AgentControlCard({ task, run }: { task: Task; run?: TaskRunState }) {
   const {
     attributes,
     listeners,
@@ -279,7 +279,7 @@ export function JarvisCard({ task, run }: { task: Task; run?: TaskRunState }) {
   );
 }
 
-export function JarvisCardOverlay({ task, run }: { task: Task; run?: TaskRunState }) {
+export function AgentControlCardOverlay({ task, run }: { task: Task; run?: TaskRunState }) {
   const delegation = task.delegation_status;
   return (
     <div className="flex flex-col gap-2 p-3.5 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-600 shadow-2xl rotate-[2deg] scale-105 w-[280px] pointer-events-none">
