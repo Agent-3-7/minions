@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Loader2, GitBranch, Sparkles } from 'lucide-react';
-import { createSubissue } from '../lib/api';
+import { createSubtask } from '../lib/api';
 import { useStore } from '../lib/store';
 import type { Task } from '@shared/types';
 
@@ -10,7 +10,7 @@ interface Props {
   onClose: () => void;
 }
 
-export function CreateSubissueModal({ parent, onClose, initialDelegate = false }: Props & { initialDelegate?: boolean }) {
+export function CreateSubtaskModal({ parent, onClose, initialDelegate = false }: Props & { initialDelegate?: boolean }) {
   const upsertTask = useStore((s) => s.upsertTask);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -29,7 +29,7 @@ export function CreateSubissueModal({ parent, onClose, initialDelegate = false }
     setLoading(true);
     setError(null);
     try {
-      const res = await createSubissue(parent.id, {
+      const res = await createSubtask(parent.id, {
         title: trimmed,
         description: description.trim() || undefined,
         delegate,
@@ -38,12 +38,12 @@ export function CreateSubissueModal({ parent, onClose, initialDelegate = false }
         assignee: assignee.trim() || undefined,
       });
       if (res.parent) upsertTask(res.parent);
-      for (const sub of res.subissues) {
+      for (const sub of res.subtasks) {
         upsertTask(sub);
       }
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create subissue');
+      setError(err instanceof Error ? err.message : 'Failed to create subtask');
     } finally {
       setLoading(false);
     }
@@ -55,7 +55,7 @@ export function CreateSubissueModal({ parent, onClose, initialDelegate = false }
         <div className="flex items-center justify-between px-5 pt-5 pb-3">
           <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
             <GitBranch size={15} strokeWidth={2} />
-            New subissue
+            New subtask
           </h3>
           <button onClick={onClose} className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors">
             <X size={18} />
@@ -143,7 +143,7 @@ export function CreateSubissueModal({ parent, onClose, initialDelegate = false }
               className="inline-flex items-center gap-2 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300 disabled:opacity-50 transition-colors"
             >
               {loading && <Loader2 size={14} className="animate-spin" />}
-              Create subissue
+              Create subtask
             </button>
           </div>
         </form>

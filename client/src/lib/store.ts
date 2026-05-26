@@ -6,7 +6,7 @@ interface AppState {
   taskRuns: Map<string, TaskRunState>;
   tasksLoaded: boolean;
   sidebarCollapsed: boolean;
-  subissuesByParent: Map<string, Task[]>;
+  subtasksByParent: Map<string, Task[]>;
 
   setTasks: (tasks: Task[]) => void;
   upsertTask: (task: Task) => void;
@@ -14,8 +14,8 @@ interface AppState {
   setTaskRuns: (runs: TaskRunState[]) => void;
   setTaskRun: (run: TaskRunState) => void;
   toggleSidebar: () => void;
-  setSubissues: (parentId: string, subissues: Task[]) => void;
-  upsertSubissue: (parentId: string, subissue: Task) => void;
+  setSubtasks: (parentId: string, subtasks: Task[]) => void;
+  upsertSubtask: (parentId: string, subtask: Task) => void;
 }
 
 function tasksEqual(a: Task, b: Task): boolean {
@@ -38,13 +38,13 @@ function taskRunEqual(a: TaskRunState | undefined, b: TaskRunState): boolean {
   );
 }
 
-function sortedSubissues(tasks: Task[], parentId: string): Task[] {
+function sortedSubtasks(tasks: Task[], parentId: string): Task[] {
   return tasks
     .filter((candidate) => candidate.parent_task_id === parentId)
     .sort((a, b) => a.created_at - b.created_at);
 }
 
-function buildSubissuesByParent(tasks: Task[]): Map<string, Task[]> {
+function buildSubtasksByParent(tasks: Task[]): Map<string, Task[]> {
   const grouped = new Map<string, Task[]>();
   for (const task of tasks) {
     if (!task.parent_task_id) continue;
@@ -52,8 +52,8 @@ function buildSubissuesByParent(tasks: Task[]): Map<string, Task[]> {
     existing.push(task);
     grouped.set(task.parent_task_id, existing);
   }
-  for (const subissues of grouped.values()) {
-    subissues.sort((a, b) => a.created_at - b.created_at);
+  for (const subtasks of grouped.values()) {
+    subtasks.sort((a, b) => a.created_at - b.created_at);
   }
   return grouped;
 }
@@ -63,9 +63,9 @@ export const useStore = create<AppState>((set) => ({
   taskRuns: new Map<string, TaskRunState>(),
   tasksLoaded: false,
   sidebarCollapsed: localStorage.getItem('sidebarCollapsed') === 'true',
-  subissuesByParent: new Map<string, Task[]>(),
+  subtasksByParent: new Map<string, Task[]>(),
 
-  setTasks: (tasks) => set({ tasks, tasksLoaded: true, subissuesByParent: buildSubissuesByParent(tasks) }),
+  setTasks: (tasks) => set({ tasks, tasksLoaded: true, subtasksByParent: buildSubtasksByParent(tasks) }),
 
   upsertTask: (task) =>
     set((state) => {
@@ -74,37 +74,37 @@ export const useStore = create<AppState>((set) => ({
       if (idx === -1) {
         const tasks = [...state.tasks, task];
         if (!task.parent_task_id) return { tasks };
-        const subissuesByParent = new Map(state.subissuesByParent);
-        subissuesByParent.set(task.parent_task_id, sortedSubissues(tasks, task.parent_task_id));
-        return { tasks, subissuesByParent };
+        const subtasksByParent = new Map(state.subtasksByParent);
+        subtasksByParent.set(task.parent_task_id, sortedSubtasks(tasks, task.parent_task_id));
+        return { tasks, subtasksByParent };
       }
       if (tasksEqual(existing, task)) return state;
       const next = [...state.tasks];
       next[idx] = task;
       if (!task.parent_task_id && !existing.parent_task_id) return { tasks: next };
 
-      const subissuesByParent = new Map(state.subissuesByParent);
+      const subtasksByParent = new Map(state.subtasksByParent);
       const affectedParentIds = new Set<string>();
       if (existing.parent_task_id) affectedParentIds.add(existing.parent_task_id);
       if (task.parent_task_id) affectedParentIds.add(task.parent_task_id);
       for (const parentId of affectedParentIds) {
-        subissuesByParent.set(parentId, sortedSubissues(next, parentId));
+        subtasksByParent.set(parentId, sortedSubtasks(next, parentId));
       }
-      return { tasks: next, subissuesByParent };
+      return { tasks: next, subtasksByParent };
     }),
 
   removeTask: (taskId) =>
     set((state) => {
       const removed = state.tasks.find((t) => t.id === taskId);
       const tasks = state.tasks.filter((t) => t.id !== taskId);
-      const subissuesByParent = removed?.parent_task_id ? new Map(state.subissuesByParent) : state.subissuesByParent;
+      const subtasksByParent = removed?.parent_task_id ? new Map(state.subtasksByParent) : state.subtasksByParent;
       if (removed?.parent_task_id) {
-        subissuesByParent.set(removed.parent_task_id, sortedSubissues(tasks, removed.parent_task_id));
+        subtasksByParent.set(removed.parent_task_id, sortedSubtasks(tasks, removed.parent_task_id));
       }
-      if (!state.taskRuns.has(taskId)) return { tasks, subissuesByParent };
+      if (!state.taskRuns.has(taskId)) return { tasks, subtasksByParent };
       const taskRuns = new Map(state.taskRuns);
       taskRuns.delete(taskId);
-      return { tasks, taskRuns, subissuesByParent };
+      return { tasks, taskRuns, subtasksByParent };
     }),
 
   setTaskRuns: (runs) =>
@@ -143,27 +143,27 @@ export const useStore = create<AppState>((set) => ({
       return { sidebarCollapsed: next };
     }),
 
-  setSubissues: (parentId, subissues) =>
+  setSubtasks: (parentId, subtasks) =>
     set((state) => {
-      const subissuesByParent = new Map(state.subissuesByParent);
-      subissuesByParent.set(parentId, subissues);
-      return { subissuesByParent };
+      const subtasksByParent = new Map(state.subtasksByParent);
+      subtasksByParent.set(parentId, subtasks);
+      return { subtasksByParent };
     }),
 
-  upsertSubissue: (parentId, subissue) =>
+  upsertSubtask: (parentId, subtask) =>
     set((state) => {
-      const subissuesByParent = new Map(state.subissuesByParent);
-      const existing = subissuesByParent.get(parentId) ?? [];
-      const idx = existing.findIndex((t) => t.id === subissue.id);
+      const subtasksByParent = new Map(state.subtasksByParent);
+      const existing = subtasksByParent.get(parentId) ?? [];
+      const idx = existing.findIndex((t: Task) => t.id === subtask.id);
       let next: Task[];
       if (idx === -1) {
-        next = [...existing, subissue];
+        next = [...existing, subtask];
       } else {
         next = [...existing];
-        next[idx] = subissue;
+        next[idx] = subtask;
       }
-      subissuesByParent.set(parentId, next);
-      return { subissuesByParent };
+      subtasksByParent.set(parentId, next);
+      return { subtasksByParent };
     }),
 }));
 

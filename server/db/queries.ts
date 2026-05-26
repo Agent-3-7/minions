@@ -36,10 +36,10 @@ const stmtInsertTask = db.prepare(`
   )
 `);
 const stmtDeleteTask = db.prepare('DELETE FROM tasks WHERE id = ?');
-const stmtDetachSubissues = db.prepare('UPDATE tasks SET parent_task_id = NULL, updated_at = ? WHERE parent_task_id = ?');
+const stmtDetachSubtasks = db.prepare('UPDATE tasks SET parent_task_id = NULL, updated_at = ? WHERE parent_task_id = ?');
 const stmtTouchTask = db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?');
-const stmtGetSubissues = db.prepare('SELECT * FROM tasks WHERE parent_task_id = ? ORDER BY created_at ASC');
-const stmtSubissueCount = db.prepare('SELECT COUNT(*) AS count FROM tasks WHERE parent_task_id = ?');
+const stmtGetSubtasks = db.prepare('SELECT * FROM tasks WHERE parent_task_id = ? ORDER BY created_at ASC');
+const stmtSubtaskCount = db.prepare('SELECT COUNT(*) AS count FROM tasks WHERE parent_task_id = ?');
 const stmtMarkTaskViewed = db.prepare(`
   UPDATE tasks
   SET last_viewed_at = last_agent_response_at
@@ -190,21 +190,21 @@ export function markTaskViewed(id: string): { task: Task | undefined; changed: b
 }
 
 export function deleteTask(id: string): boolean {
-  const deleteWithDetachedSubissues = db.transaction((taskId: string): boolean => {
+  const deleteWithDetachedSubtasks = db.transaction((taskId: string): boolean => {
     const now = Date.now();
-    stmtDetachSubissues.run(now, taskId);
+    stmtDetachSubtasks.run(now, taskId);
     const result = stmtDeleteTask.run(taskId);
     return result.changes > 0;
   });
 
-  return deleteWithDetachedSubissues(id);
+  return deleteWithDetachedSubtasks(id);
 }
 
-export function getSubissues(parentId: string): Task[] {
-  return stmtGetSubissues.all(parentId) as Task[];
+export function getSubtasks(parentId: string): Task[] {
+  return stmtGetSubtasks.all(parentId) as Task[];
 }
 
-export function getSubissueCount(parentId: string): number {
-  const row = stmtSubissueCount.get(parentId) as { count: number };
+export function getSubtaskCount(parentId: string): number {
+  const row = stmtSubtaskCount.get(parentId) as { count: number };
   return row.count;
 }

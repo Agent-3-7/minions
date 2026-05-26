@@ -23,9 +23,13 @@ function startKeepalive() {
 
 export function initSSE(res: Response): void {
   res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
+  // Send an immediate comment frame so browser/proxy layers know the SSE stream
+  // is intentionally open even when there is no current run snapshot yet.
+  res.write(':connected\n\n');
 }
 
 export function addClient(res: Response) {

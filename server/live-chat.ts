@@ -58,6 +58,7 @@ function mergeToolProgress(tools: ToolProgressEvent[], event: StreamEvent): void
     status: event.status ?? 'running',
     duration: event.duration,
     label: event.label,
+    codeDiff: event.codeDiff ?? null,
   };
 
   if (tool.status === 'running') {
@@ -67,7 +68,7 @@ function mergeToolProgress(tools: ToolProgressEvent[], event: StreamEvent): void
 
   for (let i = tools.length - 1; i >= 0; i--) {
     if (tools[i].tool === tool.tool && tools[i].status === 'running') {
-      tools[i] = { ...tools[i], ...tool, label: tool.label ?? tools[i].label };
+      tools[i] = { ...tools[i], ...tool, label: tool.label ?? tools[i].label, codeDiff: tool.codeDiff ?? tools[i].codeDiff };
       return;
     }
   }

@@ -27,8 +27,8 @@ import type {
   SkillInstallResult,
   ClawHubSkillSummary,
   ClawHubScanResult,
-  SubissueInput,
-  SubissueResponse,
+  SubtaskInput,
+  SubtaskResponse,
 } from '@shared/types';
 
 export type { SkillMeta, SkillInstallResult };
@@ -72,6 +72,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export function fetchTasks() {
   return request<{ tasks: Task[] }>('/tasks');
+}
+
+export function fetchTask(id: string) {
+  return request<{ task: Task }>(`/tasks/${id}`);
 }
 
 export function moveTask(id: string, status: TaskStatus) {
@@ -157,12 +161,12 @@ export function interruptTask(taskId: string, reason?: string) {
   });
 }
 
-export function fetchSubissues(taskId: string) {
-  return request<SubissueResponse>(`/tasks/${taskId}/subissues`);
+export function fetchSubtasks(taskId: string) {
+  return request<SubtaskResponse>(`/tasks/${taskId}/subtasks`);
 }
 
-export function createSubissue(taskId: string, input: SubissueInput) {
-  return request<SubissueResponse>(`/tasks/${taskId}/subissues`, {
+export function createSubtask(taskId: string, input: SubtaskInput) {
+  return request<SubtaskResponse>(`/tasks/${taskId}/subtasks`, {
     method: 'POST',
     body: JSON.stringify(input),
   });

@@ -24,6 +24,7 @@ import {
 import { taskRunSettings, parseRunSettingsBody } from '../agent-settings.js';
 import { TASK_AGENT_SYSTEM_PROMPT } from '../prompts/task-agent.js';
 import { isRecord, toErrorMessage } from '../errors.js';
+import { collectGitDiffSummary } from '../git-diff-preview.js';
 import type { StreamEvent, AgentRunOptions } from '../adapters/types.js';
 import { CHAT_RUN_MODES, MINIONS_GOAL_MAX_TURNS, type ChatRunMode, type CompactResult, type ContextUsage, type GoalStateSnapshot, type Task } from '../../shared/types.js';
 
@@ -201,6 +202,19 @@ async function streamChatTurn(
   let responseText = '';
   let hadError = false;
   let interrupted = false;
+  let lastDiffSignature: string | null = null;
+
+  async function maybeAttachDiffPreview(event: StreamEvent): Promise<StreamEvent> {
+    if (event.type !== 'tool_progress' || event.status !== 'completed') return event;
+    const diff = await collectGitDiffSummary();
+    if (!diff) return event;
+
+    const signature = `${diff.fileCount}:${diff.stat}:${diff.patch.slice(0, 300)}`;
+    if (signature === lastDiffSignature) return event;
+    lastDiffSignature = signature;
+
+    return { ...event, codeDiff: diff };
+  }
 
   try {
     const streamOptions: AgentRunOptions = {
@@ -209,7 +223,7 @@ async function streamChatTurn(
       task: { id: runTask.id, title: runTask.title },
     };
 
-    // Inject parent task context when this task is a delegated subissue
+    // Inject parent task context when this task is a delegated subtask
     if (runTask.parent_task_id) {
       const parentTask = getTask(runTask.parent_task_id);
       if (parentTask) {
@@ -240,8 +254,9 @@ async function streamChatTurn(
       if (event.type === 'error') {
         hadError = true;
       }
-      applyEvent(runTask.id, event);
-      broadcastLive(runTask.id, event);
+      const enrichedEvent = await maybeAttachDiffPreview(event);
+      applyEvent(runTask.id, enrichedEvent);
+      broadcastLive(runTask.id, enrichedEvent);
     }
   } catch (error) {
     hadError = true;

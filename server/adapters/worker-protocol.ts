@@ -8,6 +8,7 @@ import type {
   SessionMetadata,
   TaskMessage,
   ContextUsage,
+  CodeDiffSummary,
 } from '../../shared/types.js';
 import type { AgentRunSettings } from './types.js';
 
@@ -43,7 +44,7 @@ export type WorkerRequest =
       settings: AgentRunSettings;
       taskId?: string;
       taskTitle?: string | null;
-      /** Parent task context injected for delegated subissues. */
+      /** Parent task context injected for delegated subtasks. */
       parentTask?: {
         id: string;
         title: string;
@@ -106,6 +107,7 @@ export type WorkerEvent =
       status?: 'running' | 'completed' | 'error';
       duration?: number;
       label?: string | null;
+      codeDiff?: CodeDiffSummary | null;
     }
   | { id: string; type: 'done'; sessionId?: string; context?: ContextUsage | null; interrupted?: boolean; model?: string | null; provider?: string | null }
   | { id: string; type: 'error'; error: string | WorkerErrorPayload };

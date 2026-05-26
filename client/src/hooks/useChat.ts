@@ -35,6 +35,7 @@ type LiveEvent =
       status?: ToolProgressEvent['status'];
       duration?: number;
       label?: string;
+      codeDiff?: ToolProgressEvent['codeDiff'];
     }
   | { type: 'done'; sessionId?: string; context?: ContextUsage | null; interrupted?: boolean }
   | { type: 'error'; error?: string };
@@ -75,6 +76,7 @@ function mergeToolProgress(tools: ToolProgressEvent[], event: Extract<LiveEvent,
     status: event.status ?? 'running',
     duration: event.duration,
     label: event.label,
+    codeDiff: event.codeDiff ?? null,
   };
 
   if (tool.status === 'running') return [...tools, tool];
@@ -86,6 +88,7 @@ function mergeToolProgress(tools: ToolProgressEvent[], event: Extract<LiveEvent,
         ...next[i],
         ...tool,
         label: tool.label ?? next[i].label,
+        codeDiff: tool.codeDiff ?? next[i].codeDiff,
       };
       return next;
     }
@@ -163,6 +166,8 @@ export function useChat() {
 
   const postAbortRef = useRef<AbortController | null>(null);
   const sourceRef = useRef<EventSource | null>(null);
+  const liveReconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const liveRetryRef = useRef(0);
   const taskIdRef = useRef<string | null>(null);
   const committedMessagesRef = useRef<ChatMessage[]>([]);
   const liveRunRef = useRef<LiveChatRun | null>(null);
@@ -170,6 +175,10 @@ export function useChat() {
   const rafRef = useRef<number | null>(null);
 
   const closeLiveSource = useCallback(() => {
+    if (liveReconnectTimerRef.current) {
+      clearTimeout(liveReconnectTimerRef.current);
+      liveReconnectTimerRef.current = null;
+    }
     sourceRef.current?.close();
     sourceRef.current = null;
   }, []);
@@ -306,6 +315,9 @@ export function useChat() {
     taskIdRef.current = taskId;
 
     const source = new EventSource(`${BASE}/tasks/${encodeURIComponent(taskId)}/live`);
+    source.onopen = () => {
+      liveRetryRef.current = 0;
+    };
     source.onmessage = (message) => {
       if (taskIdRef.current !== taskId) return;
       try {
@@ -314,7 +326,17 @@ export function useChat() {
         console.warn('Failed to parse live chat event:', message.data, err);
       }
     };
-    source.onerror = () => {};
+    source.onerror = () => {
+      if (taskIdRef.current !== taskId) return;
+      source.close();
+      if (sourceRef.current === source) sourceRef.current = null;
+      const delay = Math.min(1000 * 2 ** liveRetryRef.current, 30_000);
+      liveRetryRef.current += 1;
+      if (liveReconnectTimerRef.current) clearTimeout(liveReconnectTimerRef.current);
+      liveReconnectTimerRef.current = setTimeout(() => {
+        if (taskIdRef.current === taskId) openLiveSubscription(taskId);
+      }, delay);
+    };
     sourceRef.current = source;
   }, [applyLiveEvent, closeLiveSource]);
 

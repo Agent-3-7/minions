@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Trash2, GitBranch, Sparkles, Link as LinkIcon } from 'lucide-react';
+import { Trash2, GitBranch, Sparkles, Link as LinkIcon, ListTree } from 'lucide-react';
 import type { Task, TaskStatus } from '@shared/types';
 import { TASK_STATUSES } from '@shared/types';
 import { STATUS_META } from '../lib/constants';
@@ -8,7 +8,7 @@ import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { StatusIcon } from './StatusIcon';
 import { useStore, optimisticMoveTask } from '../lib/store';
 import { moveTask, deleteTask } from '../lib/api';
-import { CreateSubissueModal } from './CreateSubissueModal';
+import { CreateSubtaskModal } from './CreateSubtaskModal';
 
 interface Props {
   task: Task;
@@ -23,8 +23,8 @@ export function TaskContextMenu({ task, x, y, onClose }: Props) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x, y });
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [showSubissueModal, setShowSubissueModal] = useState(false);
-  const [subissueDelegate, setSubissueDelegate] = useState(false);
+  const [showSubtaskModal, setShowSubtaskModal] = useState(false);
+  const [subtaskDelegate, setSubtaskDelegate] = useState(false);
 
   useLayoutEffect(() => {
     const menu = menuRef.current;
@@ -39,7 +39,7 @@ export function TaskContextMenu({ task, x, y, onClose }: Props) {
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (showDeleteConfirm || showSubissueModal) return;
+      if (showDeleteConfirm || showSubtaskModal) return;
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) onClose();
     }
     function handleKey(e: KeyboardEvent) {
@@ -51,7 +51,7 @@ export function TaskContextMenu({ task, x, y, onClose }: Props) {
       document.removeEventListener('mousedown', handleClick);
       document.removeEventListener('keydown', handleKey);
     };
-  }, [onClose, showDeleteConfirm, showSubissueModal]);
+  }, [onClose, showDeleteConfirm, showSubtaskModal]);
 
   async function handleMove(status: TaskStatus) {
     onClose();
@@ -105,20 +105,20 @@ export function TaskContextMenu({ task, x, y, onClose }: Props) {
         <button
           type="button"
           role="menuitem"
-          onClick={() => { setSubissueDelegate(false); setShowSubissueModal(true); }}
+          onClick={() => { setSubtaskDelegate(false); setShowSubtaskModal(true); }}
           className="w-full flex items-center gap-2.5 px-3 py-1.5 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors text-left"
         >
           <GitBranch size={14} strokeWidth={2} />
-          Create subissue
+          Create subtask
         </button>
         <button
           type="button"
           role="menuitem"
-          onClick={() => { setSubissueDelegate(true); setShowSubissueModal(true); }}
+          onClick={() => { setSubtaskDelegate(true); setShowSubtaskModal(true); }}
           className="w-full flex items-center gap-2.5 px-3 py-1.5 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors text-left"
         >
           <Sparkles size={14} strokeWidth={2} />
-          Delegate subissue
+          Delegate subtask
         </button>
         <button
           type="button"
@@ -145,11 +145,11 @@ export function TaskContextMenu({ task, x, y, onClose }: Props) {
       {showDeleteConfirm && (
         <DeleteConfirmModal onConfirm={handleDelete} onCancel={() => setShowDeleteConfirm(false)} zIndex={60} />
       )}
-      {showSubissueModal && (
-        <CreateSubissueModal
+      {showSubtaskModal && (
+        <CreateSubtaskModal
           parent={task}
-          initialDelegate={subissueDelegate}
-          onClose={() => setShowSubissueModal(false)}
+          initialDelegate={subtaskDelegate}
+          onClose={() => setShowSubtaskModal(false)}
         />
       )}
     </>,

@@ -8,6 +8,7 @@ import type {
   ScheduledTaskInput,
   SessionMetadata,
   TaskMessage,
+  CodeDiffSummary,
 } from '../../shared/types.js';
 
 export type { AgentRunSettings, ContextUsage };
@@ -19,7 +20,7 @@ export interface AgentRunOptions {
     id: string;
     title?: string | null;
   };
-  /** Parent task context injected when this task is a delegated subissue. */
+  /** Parent task context injected when this task is a delegated subtask. */
   parentTask?: {
     id: string;
     title: string;
@@ -39,6 +40,7 @@ export interface StreamEvent {
   status?: 'running' | 'completed' | 'error';
   duration?: number;
   label?: string;
+  codeDiff?: CodeDiffSummary | null;
   context?: ContextUsage | null;
   interrupted?: boolean;
   /** The model that was used for this run, reported on 'done'. */

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo, Fragment } from 'react';
-import { ArrowUp, Loader2, ChevronDown, ChevronRight, Check, Terminal, FileText, FilePenLine, Globe, Code, Wrench, X, Target, Square } from 'lucide-react';
+import { ArrowUp, Loader2, ChevronDown, ChevronRight, Check, Terminal, FileText, FilePenLine, Globe, Code, Wrench, X, Target, Square, GitCompare, Copy } from 'lucide-react';
 import { InputToolbar, ContextRing } from './InputToolbar';
 import { AttachButton, AttachDropOverlay, AttachmentTray, UploadErrorBar } from './ChatAttachments';
 import { MarkdownContent } from './MarkdownContent';
@@ -87,34 +87,119 @@ function formatToolName(name: string): string {
   return name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
+function DiffLine({ line }: { line: string }) {
+  const tone = line.startsWith('+') && !line.startsWith('+++')
+    ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200'
+    : line.startsWith('-') && !line.startsWith('---')
+      ? 'bg-red-50 text-red-800 dark:bg-red-950/40 dark:text-red-200'
+      : line.startsWith('@@')
+        ? 'bg-sky-50 text-sky-800 dark:bg-sky-950/40 dark:text-sky-200'
+        : 'text-zinc-600 dark:text-zinc-400';
+  return <div className={`min-w-max px-3 ${tone}`}>{line || ' '}</div>;
+}
+
+function GitDiffPreview({ tool }: { tool: ToolProgressEvent }) {
+  const [expanded, setExpanded] = useState(false);
+  const diff = tool.codeDiff;
+  if (!diff) return null;
+
+  const visibleFiles = diff.files.slice(0, 4);
+  const lines = diff.patch ? diff.patch.split('\n').slice(0, expanded ? 220 : 36) : [];
+  const hasMoreLines = diff.patch ? diff.patch.split('\n').length > lines.length : false;
+
+  return (
+    <div className="mt-2 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950/70">
+      <button
+        type="button"
+        onClick={() => setExpanded((value) => !value)}
+        className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-900/70"
+      >
+        <GitCompare size={16} className="mt-0.5 shrink-0 text-indigo-500 dark:text-indigo-300" />
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">Live code diff</span>
+            <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-200">
+              {diff.fileCount} file{diff.fileCount === 1 ? '' : 's'} changed
+            </span>
+            {diff.truncated && (
+              <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-950/60 dark:text-amber-200">
+                preview truncated
+              </span>
+            )}
+          </div>
+          <div className="mt-1 flex min-w-0 flex-wrap gap-1.5">
+            {visibleFiles.map((file) => (
+              <span key={`${file.status}-${file.path}`} className="max-w-full truncate rounded-md bg-zinc-100 px-1.5 py-0.5 font-mono text-[11px] text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                {file.status} {file.path}
+              </span>
+            ))}
+            {diff.fileCount > visibleFiles.length && (
+              <span className="rounded-md bg-zinc-100 px-1.5 py-0.5 text-[11px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                +{diff.fileCount - visibleFiles.length} more
+              </span>
+            )}
+          </div>
+        </div>
+        {expanded ? <ChevronDown size={14} className="mt-1 shrink-0 text-zinc-400" /> : <ChevronRight size={14} className="mt-1 shrink-0 text-zinc-400" />}
+      </button>
+      {expanded && (
+        <div className="border-t border-zinc-200 dark:border-zinc-800">
+          {diff.stat && (
+            <pre className="overflow-x-auto whitespace-pre px-3 py-2 font-mono text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">{diff.stat}</pre>
+          )}
+          {lines.length > 0 && (
+            <div className="max-h-96 overflow-auto border-t border-zinc-100 bg-zinc-50 py-2 font-mono text-[11px] leading-5 dark:border-zinc-900 dark:bg-zinc-950">
+              {lines.map((line, index) => <DiffLine key={index} line={line} />)}
+              {hasMoreLines && <div className="px-3 pt-1 text-zinc-400">… expand preview limit reached</div>}
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-3 border-t border-zinc-100 px-3 py-2 text-[11px] text-zinc-400 dark:border-zinc-900">
+            <span>Captured after tool completion · unstaged + staged diff</span>
+            <button
+              type="button"
+              onClick={() => void navigator.clipboard?.writeText(diff.patch)}
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+            >
+              <Copy size={11} /> Copy patch
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ToolCallBlock({ tool }: { tool: ToolProgressEvent }) {
   const Icon = getToolIcon(tool.tool);
   return (
-    <div className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl border ${
+    <div className={`rounded-xl border px-4 py-2.5 ${
       tool.status === 'error'
         ? 'border-red-200 dark:border-red-900'
         : 'border-zinc-200 dark:border-zinc-700'
     }`}>
-      <Icon size={14} className="text-zinc-400 dark:text-zinc-500 shrink-0" />
-      <span className={`text-sm font-medium shrink-0 ${
-        tool.status === 'error'
-          ? 'text-red-500 dark:text-red-400'
-          : 'text-zinc-600 dark:text-zinc-300'
-      }`}>
-        {formatToolName(tool.tool)}
-      </span>
-      {tool.label && (
-        <span className="text-xs text-zinc-400 dark:text-zinc-500 font-mono truncate min-w-0">
-          {tool.label}
+      <div className="flex items-center gap-2.5">
+        <Icon size={14} className="text-zinc-400 dark:text-zinc-500 shrink-0" />
+        <span className={`text-sm font-medium shrink-0 ${
+          tool.status === 'error'
+            ? 'text-red-500 dark:text-red-400'
+            : 'text-zinc-600 dark:text-zinc-300'
+        }`}>
+          {formatToolName(tool.tool)}
         </span>
-      )}
-      {tool.status === 'running' && <Loader2 size={14} className="animate-spin text-zinc-400 shrink-0" />}
-      {tool.status === 'completed' && <Check size={14} className="text-zinc-400 shrink-0" />}
-      {tool.duration != null && (
-        <span className="text-xs text-zinc-300 dark:text-zinc-600 ml-auto shrink-0 tabular-nums">
-          {tool.duration.toFixed(1)}s
-        </span>
-      )}
+        {tool.label && (
+          <span className="text-xs text-zinc-400 dark:text-zinc-500 font-mono truncate min-w-0">
+            {tool.label}
+          </span>
+        )}
+        {tool.status === 'running' && <Loader2 size={14} className="animate-spin text-zinc-400 shrink-0" />}
+        {tool.status === 'completed' && <Check size={14} className="text-zinc-400 shrink-0" />}
+        {tool.duration != null && (
+          <span className="text-xs text-zinc-300 dark:text-zinc-600 ml-auto shrink-0 tabular-nums">
+            {tool.duration.toFixed(1)}s
+          </span>
+        )}
+      </div>
+      <GitDiffPreview tool={tool} />
     </div>
   );
 }

@@ -47,7 +47,7 @@ export interface Task {
   last_viewed_at: number | null;
   last_context_used_tokens: number | null;
   last_context_window_tokens: number | null;
-  /** Parent task id for subissue hierarchy (nullable). */
+  /** Parent task id for subtask hierarchy (nullable). */
   parent_task_id: string | null;
   /** Priority (higher = more important). */
   priority: number | null;
@@ -57,7 +57,7 @@ export interface Task {
   assignee: string | null;
   /** Delegation workflow status. */
   delegation_status: DelegationStatus | null;
-  /** Computed: count of direct child subissues. Not stored in DB. */
+  /** Computed: count of direct child subtasks. Not stored in DB. */
   child_count?: number;
 }
 
@@ -75,6 +75,16 @@ export interface ToolProgressEvent {
   status: 'running' | 'completed' | 'error';
   duration?: number;
   label?: string;
+  codeDiff?: CodeDiffSummary | null;
+}
+
+export interface CodeDiffSummary {
+  files: Array<{ status: string; path: string }>;
+  fileCount: number;
+  stat: string;
+  patch: string;
+  truncated: boolean;
+  capturedAt: number;
 }
 
 export type TaskRunKind = 'chat' | 'goal' | 'compact';
@@ -199,7 +209,7 @@ export interface TaskAgentSettings {
   };
 }
 
-export interface SubissueInput {
+export interface SubtaskInput {
   title: string;
   description?: string | null;
   delegate?: boolean;
@@ -210,9 +220,9 @@ export interface SubissueInput {
   assignee?: string | null;
 }
 
-export interface SubissueResponse {
+export interface SubtaskResponse {
   parent: Task;
-  subissues: Task[];
+  subtasks: Task[];
 }
 
 export interface ScheduledTaskOrigin {

@@ -14,6 +14,7 @@ export function useTasks() {
   const retryRef = useRef(0);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const esRef = useRef<EventSource | null>(null);
+  const reconnectRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     fetchTasks().then((res) => {
@@ -52,6 +53,7 @@ export function useTasks() {
 
     function connect() {
       if (cancelled) return;
+      es?.close();
       es = new EventSource('/api/events');
       esRef.current = es;
 
@@ -101,6 +103,16 @@ export function useTasks() {
       };
     }
 
+    reconnectRef.current = () => {
+      if (cancelled) return;
+      clearTimeout(retryTimeout);
+      retryRef.current = 0;
+      try {
+        es?.close();
+      } catch {}
+      connect();
+    };
+
     connect();
 
     return () => {
@@ -109,6 +121,7 @@ export function useTasks() {
       es?.close();
       stopPolling();
       esRef.current = null;
+      reconnectRef.current = null;
     };
   }, [setTasks, upsertTask, removeTask, setTaskRuns, setTaskRun]);
 
@@ -120,11 +133,7 @@ export function useTasks() {
 
     // If SSE is closed, reconnect immediately
     if (esRef.current && esRef.current.readyState === EventSource.CLOSED) {
-      retryRef.current = 0;
-      try {
-        esRef.current.close();
-      } catch {}
-      esRef.current = new EventSource('/api/events');
+      reconnectRef.current?.();
     }
   });
 }

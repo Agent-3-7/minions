@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getAllTasks, getTask, insertTask, updateTask, deleteTask, markTaskViewed, getSubissues, getSubissueCount } from '../db/queries.js';
+import { getAllTasks, getTask, insertTask, updateTask, deleteTask, markTaskViewed, getSubtasks, getSubtaskCount } from '../db/queries.js';
 import { broadcast } from '../events.js';
 import { adapter } from '../app.js';
 import { startTaskChatRun } from './chat.js';
@@ -105,16 +105,16 @@ tasksRouter.delete('/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-// Milestone 3: Subissues
-tasksRouter.get('/:id/subissues', (req, res) => {
+// Subtask routes — each subtask is a real Task with parent_task_id
+tasksRouter.get('/:id/subtasks', (req, res) => {
   const parent = getTask(req.params.id);
   if (!parent) return res.status(404).json({ error: 'Task not found' });
 
-  const subissues = getSubissues(req.params.id);
-  res.json({ parent, subissues });
+  const subtasks = getSubtasks(req.params.id);
+  res.json({ parent, subtasks });
 });
 
-tasksRouter.post('/:id/subissues', (req, res) => {
+tasksRouter.post('/:id/subtasks', (req, res) => {
   const parent = getTask(req.params.id);
   if (!parent) return res.status(404).json({ error: 'Task not found' });
 
@@ -127,7 +127,7 @@ tasksRouter.post('/:id/subissues', (req, res) => {
   const resolvedDescription = typeof description === 'string' ? description : title;
   const resolvedLabelsJson = Array.isArray(labels) ? JSON.stringify(labels) : null;
 
-  const createdSubissue = insertTask({
+  const createdSubtask = insertTask({
     title,
     description: resolvedDescription,
     status: 'in_progress',
@@ -140,35 +140,35 @@ tasksRouter.post('/:id/subissues', (req, res) => {
     delegation_status: delegate ? 'queued' : undefined,
   });
 
-  let subissue = createdSubissue;
-  // Embed parent context in description for delegated subissues
-  if (delegate && subissue) {
+  let subtask = createdSubtask;
+  // Embed parent context in description for delegated subtasks
+  if (delegate && subtask) {
     const ctxSuffix = `\n\n---\n*Created from parent task: ${parent.title} (${parent.id})*`;
-    const updatedSubissue = updateTask(subissue.id, { description: (subissue.description ?? '') + ctxSuffix });
-    if (updatedSubissue) subissue = updatedSubissue;
+    const updatedSubtask = updateTask(subtask.id, { description: (subtask.description ?? '') + ctxSuffix });
+    if (updatedSubtask) subtask = updatedSubtask;
   }
 
-  broadcast({ type: 'task_created', task: subissue });
+  broadcast({ type: 'task_created', task: subtask });
 
   let runId: string | null = null;
   if (delegate) {
     try {
-      runId = startTaskChatRun(subissue, subissue.description ?? subissue.title).runId;
+      runId = startTaskChatRun(subtask, subtask.description ?? subtask.title).runId;
     } catch (error) {
-      const blocked = updateTask(subissue.id, { delegation_status: 'blocked' });
+      const blocked = updateTask(subtask.id, { delegation_status: 'blocked' });
       if (blocked) {
-        subissue = blocked;
+        subtask = blocked;
         broadcast({ type: 'task_updated', task: blocked });
       }
-      return res.status(409).json({ error: error instanceof Error ? error.message : 'Could not start delegated subissue' });
+      return res.status(409).json({ error: error instanceof Error ? error.message : 'Could not start delegated subtask' });
     }
   }
 
-  // Refresh parent broadcast with updated subissue count
+  // Refresh parent broadcast with updated subtask count
   const updatedParent = getTask(req.params.id);
   if (updatedParent) broadcast({ type: 'task_updated', task: updatedParent });
 
-  res.status(201).json({ parent: updatedParent ?? parent, subissues: getSubissues(req.params.id), runId });
+  res.status(201).json({ parent: updatedParent ?? parent, subtasks: getSubtasks(req.params.id), runId });
 });
 
 tasksRouter.post('/:id/move', (req, res) => {

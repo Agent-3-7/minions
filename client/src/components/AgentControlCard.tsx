@@ -117,11 +117,11 @@ function AgentRunLine({ task, run }: { task: Task; run?: TaskRunState }) {
   );
 }
 
-function SubissueProgress({ task }: { task: Task }) {
+function SubtaskProgress({ task }: { task: Task }) {
   const count = task.child_count ?? 0;
   if (count === 0) return null;
 
-  const doneCount = 0; // computed from subissues data if available; placeholder for now
+  const doneCount = 0; // computed from subtasks data if available; placeholder for now
   return (
     <div className="flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
       <GitBranch size={11} strokeWidth={2} />
@@ -232,14 +232,14 @@ export function AgentControlCard({ task, run }: { task: Task; run?: TaskRunState
               </p>
             )}
 
-            {/* Bottom row: subissues + run info + model */}
+            {/* Bottom row: subtasks + run info + model */}
             <div className="flex flex-col gap-1.5 mt-0.5">
               <div className="flex items-center justify-between gap-2">
                 <AgentRunLine task={task} run={run} />
               </div>
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <SubissueProgress task={task} />
+                  <SubtaskProgress task={task} />
                   {task.assignee && (
                     <span className="inline-flex items-center gap-0.5 text-[10px] text-zinc-400 dark:text-zinc-500 truncate">
                       <User size={10} strokeWidth={2.5} />
