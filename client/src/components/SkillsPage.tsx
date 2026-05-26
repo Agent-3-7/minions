@@ -1014,7 +1014,7 @@ export function SkillsPage() {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search skills..."
-              className="min-w-0 flex-1 bg-transparent text-sm text-zinc-900 outline-none placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+              className="min-w-0 flex-1 bg-transparent text-base text-zinc-900 outline-none placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500"
             />
           </div>
           <div className="inline-flex h-10 shrink-0 items-center gap-0.5 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-900">

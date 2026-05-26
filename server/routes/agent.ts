@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getTask } from '../db/queries.js';
+import { getTask, getSubissues } from '../db/queries.js';
 import { isRecord, toErrorMessage } from '../errors.js';
 import { taskRunSettings } from '../agent-settings.js';
 import { REASONING_EFFORTS } from '../../shared/types.js';

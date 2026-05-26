@@ -439,7 +439,7 @@ export class HermesWorkerAdapter implements AgentAdapter {
     message: string,
     options?: AgentRunOptions,
   ): AsyncIterable<StreamEvent> {
-    for await (const event of this.client.stream({
+    const request: Omit<Extract<WorkerRequest, { type: 'chat' }>, 'id'> = {
       type: 'chat',
       sessionId,
       message,
@@ -447,7 +447,10 @@ export class HermesWorkerAdapter implements AgentAdapter {
       settings: options?.settings ?? {},
       taskId: options?.task?.id,
       taskTitle: options?.task?.title ?? null,
-    })) {
+      parentTask: options?.parentTask,
+      delegatedTaskId: options?.delegatedTaskId,
+    };
+    for await (const event of this.client.stream(request)) {
       switch (event.type) {
         case 'text_delta':
           yield { type: 'text_delta', content: event.content ?? '' };
@@ -468,7 +471,14 @@ export class HermesWorkerAdapter implements AgentAdapter {
           yield { type: 'error', error: formatWorkerError(event.error), code: workerErrorCode(event.error) };
           break;
         case 'done':
-          yield { type: 'done', sessionId: event.sessionId ?? sessionId, context: event.context, interrupted: event.interrupted };
+          yield {
+            type: 'done',
+            sessionId: event.sessionId ?? sessionId,
+            context: event.context,
+            interrupted: event.interrupted,
+            model: event.model ?? null,
+            provider: event.provider ?? null,
+          };
           break;
         case 'result':
           break;

@@ -19,6 +19,9 @@ export interface AgentRunSettings {
   mode?: ChatRunMode;
 }
 
+export const DELEGATION_STATUSES = ['queued', 'running', 'review', 'blocked', 'done'] as const;
+export type DelegationStatus = (typeof DELEGATION_STATUSES)[number];
+
 export interface Task {
   id: string;
   title: string;
@@ -32,6 +35,18 @@ export interface Task {
   last_viewed_at: number | null;
   last_context_used_tokens: number | null;
   last_context_window_tokens: number | null;
+  /** Parent task id for subissue hierarchy (nullable). */
+  parent_task_id: string | null;
+  /** Priority (higher = more important). */
+  priority: number | null;
+  /** JSON array of label strings. */
+  labels_json: string | null;
+  /** Named assignee (optional, distinct from Kanban assignee). */
+  assignee: string | null;
+  /** Delegation workflow status. */
+  delegation_status: DelegationStatus | null;
+  /** Computed: count of direct child subissues. Not stored in DB. */
+  child_count?: number;
 }
 
 export interface TaskMessage {
@@ -169,6 +184,22 @@ export interface TaskAgentSettings {
     provider: string | null;
     reasoningEffort: ReasoningEffort | null;
   };
+}
+
+export interface SubissueInput {
+  title: string;
+  description?: string | null;
+  delegate?: boolean;
+  agent_model?: string | null;
+  reasoning_effort?: ReasoningEffort | null;
+  priority?: number | null;
+  labels?: string[];
+  assignee?: string | null;
+}
+
+export interface SubissueResponse {
+  parent: Task;
+  subissues: Task[];
 }
 
 export interface ScheduledTaskOrigin {

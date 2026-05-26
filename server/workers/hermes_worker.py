@@ -988,7 +988,10 @@ def _create_agent(
         if key in agent_params and value is not None
     }
 
-    return _AIAgent(**filtered_kwargs)
+    agent = _AIAgent(**filtered_kwargs)
+    # Stash the resolved provider so _run_chat can report it in the done event
+    agent._minions_resolved_provider = resolved_provider
+    return agent
 
 
 def _agent_failure_message(text: str) -> str | None:
@@ -1171,6 +1174,23 @@ def _run_chat(request_id: str, request: dict[str, Any]) -> None:
     if not isinstance(system_message, str):
         system_message = None
 
+    # Inject parent task context for delegated subissues
+    parent_task = request.get("parentTask")
+    if isinstance(parent_task, dict):
+        parent_title = string_or_none(parent_task.get("title")) or ""
+        parent_id = string_or_none(parent_task.get("id")) or ""
+        parent_desc = string_or_none(parent_task.get("description")) or ""
+        ctx_block = f"---\nThis task is a DELEGATED SUBISSUE of the parent task below. Context is provided for reference.\n"
+        ctx_block += f"Parent Task: {parent_title}\nParent ID: {parent_id}\n"
+        if parent_desc and len(parent_desc) > 200:
+            ctx_block += f"Parent Description: {parent_desc[:200]}...\n"
+        elif parent_desc:
+            ctx_block += f"Parent Description: {parent_desc}\n"
+        ctx_block += "Complete this subissue autonomously. If you create sub-subissues, mark them as child tasks of the parent.\n---"
+        system_message = f"{ctx_block}\n\n{system_message}" if system_message else ctx_block
+
+    delegated_task_id = string_or_none(request.get("delegatedTaskId"))
+
     state = {"text": "", "thinking": ""}
 
     def on_text_delta(text: Any) -> None:
@@ -1278,6 +1298,8 @@ def _run_chat(request_id: str, request: dict[str, Any]) -> None:
             "type": "done",
             "sessionId": getattr(agent, "session_id", None) or session_id,
             "interrupted": True,
+            "model": string_or_none(getattr(agent, "model", None)),
+            "provider": string_or_none(getattr(agent, "_minions_resolved_provider", None)),
         })
         return
 
@@ -1300,7 +1322,14 @@ def _run_chat(request_id: str, request: dict[str, Any]) -> None:
             "used_tokens": context_used,
             "window_tokens": context_window,
         }
-    _send({"id": request_id, "type": "done", "sessionId": getattr(agent, "session_id", None) or session_id, "context": context})
+    _send({
+        "id": request_id,
+        "type": "done",
+        "sessionId": getattr(agent, "session_id", None) or session_id,
+        "context": context,
+        "model": string_or_none(getattr(agent, "model", None)),
+        "provider": string_or_none(getattr(agent, "_minions_resolved_provider", None)),
+    })
 
 
 def _run_chat_thread(request_id: str, request: dict[str, Any], task_key: str) -> None:

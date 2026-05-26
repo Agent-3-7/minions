@@ -6,6 +6,7 @@ interface AppState {
   taskRuns: Map<string, TaskRunState>;
   tasksLoaded: boolean;
   sidebarCollapsed: boolean;
+  subissuesByParent: Map<string, Task[]>;
 
   setTasks: (tasks: Task[]) => void;
   upsertTask: (task: Task) => void;
@@ -13,6 +14,8 @@ interface AppState {
   setTaskRuns: (runs: TaskRunState[]) => void;
   setTaskRun: (run: TaskRunState) => void;
   toggleSidebar: () => void;
+  setSubissues: (parentId: string, subissues: Task[]) => void;
+  upsertSubissue: (parentId: string, subissue: Task) => void;
 }
 
 function tasksEqual(a: Task, b: Task): boolean {
@@ -40,6 +43,7 @@ export const useStore = create<AppState>((set) => ({
   taskRuns: new Map<string, TaskRunState>(),
   tasksLoaded: false,
   sidebarCollapsed: localStorage.getItem('sidebarCollapsed') === 'true',
+  subissuesByParent: new Map<string, Task[]>(),
 
   setTasks: (tasks) => set({ tasks, tasksLoaded: true }),
 
@@ -97,6 +101,29 @@ export const useStore = create<AppState>((set) => ({
       const next = !state.sidebarCollapsed;
       localStorage.setItem('sidebarCollapsed', String(next));
       return { sidebarCollapsed: next };
+    }),
+
+  setSubissues: (parentId, subissues) =>
+    set((state) => {
+      const subissuesByParent = new Map(state.subissuesByParent);
+      subissuesByParent.set(parentId, subissues);
+      return { subissuesByParent };
+    }),
+
+  upsertSubissue: (parentId, subissue) =>
+    set((state) => {
+      const subissuesByParent = new Map(state.subissuesByParent);
+      const existing = subissuesByParent.get(parentId) ?? [];
+      const idx = existing.findIndex((t) => t.id === subissue.id);
+      let next: Task[];
+      if (idx === -1) {
+        next = [...existing, subissue];
+      } else {
+        next = [...existing];
+        next[idx] = subissue;
+      }
+      subissuesByParent.set(parentId, next);
+      return { subissuesByParent };
     }),
 }));
 

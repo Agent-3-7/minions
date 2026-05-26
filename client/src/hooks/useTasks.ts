@@ -3,6 +3,7 @@ import type { BoardEvent } from '@shared/types';
 import { useStore } from '../lib/store';
 import { fetchTasks } from '../lib/api';
 import { playCompletionSound } from './useSoundOnComplete';
+import { useVisibilityRefresh } from './useVisibilityRefresh';
 
 export function useTasks() {
   const setTasks = useStore((s) => s.setTasks);
@@ -11,9 +12,23 @@ export function useTasks() {
   const setTaskRuns = useStore((s) => s.setTaskRuns);
   const setTaskRun = useStore((s) => s.setTaskRun);
   const retryRef = useRef(0);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const esRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
-    fetchTasks().then((res) => setTasks(res.tasks)).catch(console.error);
+    fetchTasks().then((res) => {
+      const countByParent = new Map<string, number>();
+      for (const t of res.tasks) {
+        if (t.parent_task_id) {
+          countByParent.set(t.parent_task_id, (countByParent.get(t.parent_task_id) ?? 0) + 1);
+        }
+      }
+      const tasks = res.tasks.map((t) => ({
+        ...t,
+        child_count: countByParent.get(t.id) ?? 0,
+      }));
+      setTasks(tasks);
+    }).catch(console.error);
   }, [setTasks]);
 
   useEffect(() => {
@@ -21,15 +36,39 @@ export function useTasks() {
     let retryTimeout: ReturnType<typeof setTimeout>;
     let cancelled = false;
 
+    function startPolling() {
+      if (pollingRef.current) return;
+      pollingRef.current = setInterval(() => {
+        fetchTasks().then((res) => setTasks(res.tasks)).catch(console.error);
+      }, 30_000);
+    }
+
+    function stopPolling() {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    }
+
     function connect() {
       if (cancelled) return;
       es = new EventSource('/api/events');
+      esRef.current = es;
 
       es.onopen = () => {
         if (retryRef.current > 0) {
-          fetchTasks().then((res) => setTasks(res.tasks)).catch(console.error);
+          fetchTasks().then((res) => {
+            const countByParent = new Map<string, number>();
+            for (const t of res.tasks) {
+              if (t.parent_task_id) {
+                countByParent.set(t.parent_task_id, (countByParent.get(t.parent_task_id) ?? 0) + 1);
+              }
+            }
+            setTasks(res.tasks.map((t) => ({ ...t, child_count: countByParent.get(t.id) ?? 0 })));
+          }).catch(console.error);
         }
         retryRef.current = 0;
+        stopPolling();
       };
 
       es.onmessage = (e) => {
@@ -55,6 +94,7 @@ export function useTasks() {
 
       es.onerror = () => {
         es?.close();
+        startPolling();
         const delay = Math.min(1000 * 2 ** retryRef.current, 30_000);
         retryRef.current++;
         retryTimeout = setTimeout(connect, delay);
@@ -67,6 +107,24 @@ export function useTasks() {
       cancelled = true;
       clearTimeout(retryTimeout);
       es?.close();
+      stopPolling();
+      esRef.current = null;
     };
   }, [setTasks, upsertTask, removeTask, setTaskRuns, setTaskRun]);
+
+  // Refetch immediately when returning to foreground (iOS background → foreground)
+  useVisibilityRefresh(() => {
+    fetchTasks()
+      .then((res) => setTasks(res.tasks))
+      .catch(console.error);
+
+    // If SSE is closed, reconnect immediately
+    if (esRef.current && esRef.current.readyState === EventSource.CLOSED) {
+      retryRef.current = 0;
+      try {
+        esRef.current.close();
+      } catch {}
+      esRef.current = new EventSource('/api/events');
+    }
+  });
 }

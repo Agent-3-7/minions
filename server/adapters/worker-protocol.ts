@@ -43,6 +43,14 @@ export type WorkerRequest =
       settings: AgentRunSettings;
       taskId?: string;
       taskTitle?: string | null;
+      /** Parent task context injected for delegated subissues. */
+      parentTask?: {
+        id: string;
+        title: string;
+        description?: string | null;
+      } | null;
+      /** The delegated child task ID for this agent run. */
+      delegatedTaskId?: string;
     }
   | {
       id: string;
@@ -99,5 +107,5 @@ export type WorkerEvent =
       duration?: number;
       label?: string | null;
     }
-  | { id: string; type: 'done'; sessionId?: string; context?: ContextUsage | null; interrupted?: boolean }
+  | { id: string; type: 'done'; sessionId?: string; context?: ContextUsage | null; interrupted?: boolean; model?: string | null; provider?: string | null }
   | { id: string; type: 'error'; error: string | WorkerErrorPayload };

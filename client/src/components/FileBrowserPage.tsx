@@ -964,7 +964,7 @@ function InlineEntryRow({
             }}
             disabled={operation.busy}
             aria-label={operation.mode === 'create' ? 'New entry name' : 'New name'}
-            className="h-7 w-full max-w-sm rounded-md border border-zinc-300 bg-white px-2 text-sm text-zinc-950 outline-none focus:border-zinc-500 disabled:opacity-70 dark:border-zinc-500"
+            className="h-7 w-full max-w-sm rounded-md border border-zinc-300 bg-white px-2 text-base text-zinc-950 outline-none focus:border-zinc-500 disabled:opacity-70 dark:border-zinc-500"
           />
           {operation.error && (
             <span className="mt-1 block truncate text-xs text-red-600 dark:text-red-300">

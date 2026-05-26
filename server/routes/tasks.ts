@@ -1,9 +1,9 @@
 import { Router } from 'express';
-import { getAllTasks, getTask, insertTask, updateTask, deleteTask, markTaskViewed } from '../db/queries.js';
+import { getAllTasks, getTask, insertTask, updateTask, deleteTask, markTaskViewed, getSubissues, getSubissueCount } from '../db/queries.js';
 import { broadcast } from '../events.js';
 import { adapter } from '../app.js';
-import { TASK_STATUSES } from '../../shared/types.js';
-import type { TaskStatus } from '../../shared/types.js';
+import { TASK_STATUSES, DELEGATION_STATUSES } from '../../shared/types.js';
+import type { TaskStatus, DelegationStatus } from '../../shared/types.js';
 
 export const tasksRouter = Router();
 
@@ -70,7 +70,7 @@ tasksRouter.post('/', (req, res) => {
 });
 
 tasksRouter.patch('/:id', (req, res) => {
-  const allowed = ['title', 'description', 'status'] as const;
+  const allowed = ['title', 'description', 'status', 'priority', 'labels_json', 'assignee', 'delegation_status', 'parent_task_id', 'agent_model', 'reasoning_effort'] as const;
   const fields: Record<string, unknown> = {};
   for (const key of allowed) {
     if (req.body[key] !== undefined) fields[key] = req.body[key];
@@ -78,6 +78,10 @@ tasksRouter.patch('/:id', (req, res) => {
 
   if (fields.status && !TASK_STATUSES.includes(fields.status as TaskStatus)) {
     return res.status(400).json({ error: `status must be one of: ${TASK_STATUSES.join(', ')}` });
+  }
+
+  if (fields.delegation_status && !DELEGATION_STATUSES.includes(fields.delegation_status as DelegationStatus)) {
+    return res.status(400).json({ error: `delegation_status must be one of: ${DELEGATION_STATUSES.join(', ')}` });
   }
 
   const updated = updateTask(req.params.id, fields);
@@ -98,6 +102,56 @@ tasksRouter.delete('/:id', (req, res) => {
   if (!deleted) return res.status(404).json({ error: 'Task not found' });
   broadcast({ type: 'task_deleted', taskId: req.params.id });
   res.json({ ok: true });
+});
+
+// Milestone 3: Subissues
+tasksRouter.get('/:id/subissues', (req, res) => {
+  const parent = getTask(req.params.id);
+  if (!parent) return res.status(404).json({ error: 'Task not found' });
+
+  const subissues = getSubissues(req.params.id);
+  res.json({ parent, subissues });
+});
+
+tasksRouter.post('/:id/subissues', (req, res) => {
+  const parent = getTask(req.params.id);
+  if (!parent) return res.status(404).json({ error: 'Task not found' });
+
+  const { title, description, delegate, agent_model, reasoning_effort, priority, labels, assignee } = req.body;
+  if (!title || typeof title !== 'string') {
+    return res.status(400).json({ error: 'title is required' });
+  }
+
+  // If delegation requested and description not provided, use title as description
+  const resolvedDescription = typeof description === 'string' ? description : title;
+  const resolvedLabelsJson = Array.isArray(labels) ? JSON.stringify(labels) : null;
+
+  const subissue = insertTask({
+    title,
+    description: resolvedDescription,
+    status: delegate ? 'in_progress' : 'in_progress',
+    parent_task_id: req.params.id,
+    agent_model: agent_model ?? undefined,
+    reasoning_effort: reasoning_effort ?? undefined,
+    priority: typeof priority === 'number' ? priority : undefined,
+    labels_json: resolvedLabelsJson,
+    assignee: assignee ?? undefined,
+    delegation_status: delegate ? 'queued' : undefined,
+  });
+
+  // Embed parent context in description for delegated subissues
+  if (delegate && subissue) {
+    const ctxSuffix = `\n\n---\n*Created from parent task: ${parent.title} (${parent.id})*`;
+    updateTask(subissue.id, { description: (subissue.description ?? '') + ctxSuffix });
+  }
+
+  broadcast({ type: 'task_created', task: subissue });
+
+  // Refresh parent broadcast with updated subissue count
+  const updatedParent = getTask(req.params.id);
+  if (updatedParent) broadcast({ type: 'task_updated', task: updatedParent });
+
+  res.status(201).json({ parent: updatedParent ?? parent, subissues: getSubissues(req.params.id) });
 });
 
 tasksRouter.post('/:id/move', (req, res) => {

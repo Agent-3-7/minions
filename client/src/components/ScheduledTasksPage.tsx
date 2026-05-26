@@ -696,7 +696,7 @@ function FieldLabel({ label, className, children }: { label: string; className?:
   );
 }
 
-const INPUT_CLASS = 'mt-1 h-9 w-full rounded-md border border-zinc-200 bg-white px-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100';
+const INPUT_CLASS = 'mt-1 h-9 w-full rounded-md border border-zinc-200 bg-white px-2.5 text-base text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100';
 
 function TextInput({
   value,
@@ -847,7 +847,7 @@ function ScheduledTaskEditorPage({
               autoFocus={isEdit}
               rows={24}
               placeholder="# Goal&#10;Describe exactly what Hermes should do on every run."
-              className="mt-1 min-h-[480px] w-full flex-1 resize-y rounded-lg border border-zinc-200 bg-white px-3 py-2.5 font-mono text-sm leading-6 text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none lg:min-h-0 lg:resize-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+              className="mt-1 min-h-[480px] w-full flex-1 resize-y rounded-lg border border-zinc-200 bg-white px-3 py-2.5 font-mono text-base leading-6 text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none lg:min-h-0 lg:resize-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
             />
           </label>
         </div>

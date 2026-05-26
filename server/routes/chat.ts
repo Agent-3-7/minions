@@ -24,7 +24,7 @@ import {
 import { taskRunSettings, parseRunSettingsBody } from '../agent-settings.js';
 import { TASK_AGENT_SYSTEM_PROMPT } from '../prompts/task-agent.js';
 import { isRecord, toErrorMessage } from '../errors.js';
-import type { StreamEvent } from '../adapters/types.js';
+import type { StreamEvent, AgentRunOptions } from '../adapters/types.js';
 import { CHAT_RUN_MODES, MINIONS_GOAL_MAX_TURNS, type ChatRunMode, type CompactResult, type ContextUsage, type GoalStateSnapshot, type Task } from '../../shared/types.js';
 
 export const chatRouter = Router();
@@ -119,14 +119,41 @@ function recordCompletedAgentRun(taskId: string, context: ContextUsage | null): 
   return updated;
 }
 
+function taskWithDelegationStatus(task: Task, runStatus: ReturnType<typeof getRunStatus>): Task | undefined {
+  if (!task.parent_task_id) return task;
+
+  if (runStatus?.status === 'streaming') {
+    if (task.delegation_status === 'running') return task;
+    return updateTask(task.id, { delegation_status: 'running' });
+  }
+
+  if (runStatus?.status === 'done') {
+    return updateTask(task.id, { delegation_status: 'review' });
+  }
+
+  if (runStatus?.status === 'error') {
+    return updateTask(task.id, { delegation_status: 'blocked' });
+  }
+
+  if (runStatus?.status === 'stopped') {
+    return updateTask(task.id, { delegation_status: 'blocked' });
+  }
+
+  return task;
+}
+
 function settleRun(taskId: string, runId: string, context: ContextUsage | null): void {
   const status = getRunStatus(taskId);
   if (status) broadcast({ type: 'task_run_updated', run: status });
 
+  const currentTask = getTask(taskId);
   if (status?.status === 'done') {
     const updated = recordCompletedAgentRun(taskId, context);
-    if (updated) broadcast({ type: 'task_updated', task: updated });
+    const delegatedTask = updated ? taskWithDelegationStatus(updated, status) : undefined;
+    if (delegatedTask) broadcast({ type: 'task_updated', task: delegatedTask });
   } else {
+    const delegatedTask = currentTask ? taskWithDelegationStatus(currentTask, status) : undefined;
+    if (delegatedTask && delegatedTask !== currentTask) broadcast({ type: 'task_updated', task: delegatedTask });
     touchTask(taskId);
   }
 
@@ -147,11 +174,26 @@ async function streamChatTurn(
   let interrupted = false;
 
   try {
-    const stream = adapter.chatStream(sessionId, content, {
+    const streamOptions: AgentRunOptions = {
       systemMessage: TASK_AGENT_SYSTEM_PROMPT,
       settings: taskRunSettings(runTask),
       task: { id: runTask.id, title: runTask.title },
-    });
+    };
+
+    // Inject parent task context when this task is a delegated subissue
+    if (runTask.parent_task_id) {
+      const parentTask = getTask(runTask.parent_task_id);
+      if (parentTask) {
+        streamOptions.parentTask = {
+          id: parentTask.id,
+          title: parentTask.title,
+          description: parentTask.description,
+        };
+        streamOptions.delegatedTaskId = runTask.id;
+      }
+    }
+
+    const stream = adapter.chatStream(sessionId, content, streamOptions);
 
     for await (const event of stream) {
       if (options.captureResponseText && event.type === 'text_delta' && event.content) {
@@ -335,6 +377,11 @@ chatRouter.post('/:id/messages', async (req, res) => {
   }
 
   const { snapshot, state } = startRun(runTask.id, sessionId, content);
+  const delegatedRunTask = taskWithDelegationStatus(runTask, state);
+  if (delegatedRunTask && delegatedRunTask !== runTask) {
+    runTask = delegatedRunTask;
+    broadcast({ type: 'task_updated', task: delegatedRunTask });
+  }
   broadcast({ type: 'task_run_updated', run: state });
   broadcastLive(runTask.id, { type: 'snapshot', run: snapshot });
   void consumeChatRun(runTask, sessionId, content, snapshot.runId);

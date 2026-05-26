@@ -27,6 +27,8 @@ import type {
   SkillInstallResult,
   ClawHubSkillSummary,
   ClawHubScanResult,
+  SubissueInput,
+  SubissueResponse,
 } from '@shared/types';
 
 export type { SkillMeta, SkillInstallResult };
@@ -83,7 +85,7 @@ export function deleteTask(id: string) {
   return request<{ ok: boolean }>(`/tasks/${id}`, { method: 'DELETE' });
 }
 
-export function patchTask(id: string, fields: { title?: string; description?: string; status?: TaskStatus }) {
+export function patchTask(id: string, fields: { title?: string; description?: string; status?: TaskStatus; priority?: number | null; labels_json?: string | null; assignee?: string | null; delegation_status?: string | null }) {
   return request<{ task: Task }>(`/tasks/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(fields),
@@ -152,6 +154,17 @@ export function interruptTask(taskId: string, reason?: string) {
   return request<{ interrupted: boolean }>(`/tasks/${taskId}/interrupt`, {
     method: 'POST',
     body: JSON.stringify(reason ? { reason } : {}),
+  });
+}
+
+export function fetchSubissues(taskId: string) {
+  return request<SubissueResponse>(`/tasks/${taskId}/subissues`);
+}
+
+export function createSubissue(taskId: string, input: SubissueInput) {
+  return request<SubissueResponse>(`/tasks/${taskId}/subissues`, {
+    method: 'POST',
+    body: JSON.stringify(input),
   });
 }
 

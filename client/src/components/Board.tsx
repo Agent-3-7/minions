@@ -16,7 +16,7 @@ import { useStore, optimisticMoveTask } from '../lib/store';
 import { deleteTask, moveTask } from '../lib/api';
 import { Column } from './Column';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
-import { TaskCardOverlay } from './TaskCard';
+import { JarvisCardOverlay } from './JarvisCard';
 
 const dropAnimation = {
   duration: 200,
@@ -132,7 +132,7 @@ export function Board() {
       </div>
       <DragOverlay dropAnimation={dropAnimation}>
         {activeTask && (
-          <TaskCardOverlay
+          <JarvisCardOverlay
             task={activeTask}
             run={taskRuns.get(activeTask.id)}
           />

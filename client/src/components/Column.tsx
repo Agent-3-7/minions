@@ -6,7 +6,7 @@ import type { Task, TaskRunState, TaskStatus } from '@shared/types';
 import { STATUS_META } from '../lib/constants';
 import { ColumnActionsMenu } from './ColumnActionsMenu';
 import { StatusIcon } from './StatusIcon';
-import { TaskCard } from './TaskCard';
+import { JarvisCard } from './JarvisCard';
 
 interface ColumnProps {
   status: TaskStatus;
@@ -73,7 +73,7 @@ export function Column({ status, tasks, taskRuns, isLast = false, onRequestDelet
         }`}
       >
         {tasks.map((task) => (
-          <TaskCard key={task.id} task={task} run={taskRuns.get(task.id)} />
+          <JarvisCard key={task.id} task={task} run={taskRuns.get(task.id)} />
         ))}
         {showAddButton && (
           <div className="h-9 shrink-0">

@@ -13,4 +13,9 @@ CREATE TABLE IF NOT EXISTS tasks (
   last_context_window_tokens INTEGER
 );
 
+-- Milestone 3: Task hierarchy / subissues columns are added by the
+-- idempotent migration block in index.ts. SQLite does not support
+-- `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, so keeping ALTER statements in
+-- this schema file would fail on every restart after the first migration.
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_parent_task_id ON tasks(parent_task_id);

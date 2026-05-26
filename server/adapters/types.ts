@@ -19,6 +19,14 @@ export interface AgentRunOptions {
     id: string;
     title?: string | null;
   };
+  /** Parent task context injected when this task is a delegated subissue. */
+  parentTask?: {
+    id: string;
+    title: string;
+    description?: string | null;
+  } | null;
+  /** The child (delegated) task ID this agent run belongs to. */
+  delegatedTaskId?: string;
 }
 
 export interface StreamEvent {
@@ -33,6 +41,10 @@ export interface StreamEvent {
   label?: string;
   context?: ContextUsage | null;
   interrupted?: boolean;
+  /** The model that was used for this run, reported on 'done'. */
+  model?: string | null;
+  /** The provider that was used for this run, reported on 'done'. */
+  provider?: string | null;
 }
 
 export interface AgentAdapter {

@@ -7,23 +7,38 @@ import {
   type ContextUsage,
 } from '../../shared/types.js';
 
-const stmtAllTasks = db.prepare('SELECT * FROM tasks ORDER BY updated_at DESC');
-const stmtTasksByStatus = db.prepare('SELECT * FROM tasks WHERE status = ? ORDER BY updated_at DESC');
-const stmtGetTask = db.prepare('SELECT * FROM tasks WHERE id = ?');
+const TASK_SELECT_WITH_CHILD_COUNT = `
+  SELECT
+    tasks.*,
+    (
+      SELECT COUNT(*)
+      FROM tasks AS child_tasks
+      WHERE child_tasks.parent_task_id = tasks.id
+    ) AS child_count
+  FROM tasks
+`;
+
+const stmtAllTasks = db.prepare(`${TASK_SELECT_WITH_CHILD_COUNT} ORDER BY updated_at DESC`);
+const stmtTasksByStatus = db.prepare(`${TASK_SELECT_WITH_CHILD_COUNT} WHERE status = ? ORDER BY updated_at DESC`);
+const stmtGetTask = db.prepare(`${TASK_SELECT_WITH_CHILD_COUNT} WHERE id = ?`);
 const stmtInsertTask = db.prepare(`
   INSERT INTO tasks (
     id, title, description, status, agent_model, reasoning_effort,
     created_at, updated_at, last_agent_response_at, last_viewed_at,
-    last_context_used_tokens, last_context_window_tokens
+    last_context_used_tokens, last_context_window_tokens,
+    parent_task_id, priority, labels_json, assignee, delegation_status
   )
   VALUES (
     @id, @title, @description, @status, @agent_model, @reasoning_effort,
     @created_at, @updated_at, @last_agent_response_at, @last_viewed_at,
-    @last_context_used_tokens, @last_context_window_tokens
+    @last_context_used_tokens, @last_context_window_tokens,
+    @parent_task_id, @priority, @labels_json, @assignee, @delegation_status
   )
 `);
 const stmtDeleteTask = db.prepare('DELETE FROM tasks WHERE id = ?');
 const stmtTouchTask = db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?');
+const stmtGetSubissues = db.prepare('SELECT * FROM tasks WHERE parent_task_id = ? ORDER BY created_at ASC');
+const stmtSubissueCount = db.prepare('SELECT COUNT(*) AS count FROM tasks WHERE parent_task_id = ?');
 const stmtMarkTaskViewed = db.prepare(`
   UPDATE tasks
   SET last_viewed_at = last_agent_response_at
@@ -46,6 +61,11 @@ export function insertTask(task: {
   agent_model?: string | null;
   reasoning_effort?: ReasoningEffort | null;
   last_agent_response_at?: number | null;
+  parent_task_id?: string | null;
+  priority?: number | null;
+  labels_json?: string | null;
+  assignee?: string | null;
+  delegation_status?: string | null;
 }): Task {
   const id = uuid();
   const now = Date.now();
@@ -62,6 +82,11 @@ export function insertTask(task: {
     last_viewed_at: null,
     last_context_used_tokens: null,
     last_context_window_tokens: null,
+    parent_task_id: task.parent_task_id ?? null,
+    priority: task.priority ?? null,
+    labels_json: task.labels_json ?? null,
+    assignee: task.assignee ?? null,
+    delegation_status: task.delegation_status ?? null,
   };
   stmtInsertTask.run(row);
   return row as Task;
@@ -76,6 +101,11 @@ const ALLOWED_UPDATE_FIELDS = new Set<string>([
   'last_agent_response_at',
   'last_context_used_tokens',
   'last_context_window_tokens',
+  'parent_task_id',
+  'priority',
+  'labels_json',
+  'assignee',
+  'delegation_status',
 ]);
 const updateStmtCache = new Map<string, ReturnType<typeof db.prepare>>();
 
@@ -89,6 +119,11 @@ type TaskUpdateFields = Pick<
   | 'last_agent_response_at'
   | 'last_context_used_tokens'
   | 'last_context_window_tokens'
+  | 'parent_task_id'
+  | 'priority'
+  | 'labels_json'
+  | 'assignee'
+  | 'delegation_status'
 >;
 
 function getUpdateStmt(fieldKeys: string[]): ReturnType<typeof db.prepare> {
@@ -152,4 +187,13 @@ export function markTaskViewed(id: string): { task: Task | undefined; changed: b
 export function deleteTask(id: string): boolean {
   const result = stmtDeleteTask.run(id);
   return result.changes > 0;
+}
+
+export function getSubissues(parentId: string): Task[] {
+  return stmtGetSubissues.all(parentId) as Task[];
+}
+
+export function getSubissueCount(parentId: string): number {
+  const row = stmtSubissueCount.get(parentId) as { count: number };
+  return row.count;
 }
