@@ -1,19 +1,81 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { MoreHorizontal, Trash2, Loader2, Pencil, Check } from 'lucide-react';
+import { Link, useParams, useNavigate, useLocation } from 'react-router-dom';
+import { MoreHorizontal, Trash2, Loader2, Pencil, Check, GitBranch, AlertTriangle, CheckCircle2, Clock } from 'lucide-react';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { StatusIcon } from './StatusIcon';
 import { useStore, optimisticMoveTask } from '../lib/store';
 import { toast } from 'sonner';
-import { deleteTask, patchTask, moveTask, markTaskViewed } from '../lib/api';
-import { TASK_STATUSES } from '@shared/types';
+import { deleteTask, fetchSubissues, patchTask, moveTask, markTaskViewed } from '../lib/api';
+import { DELEGATION_STATUSES, TASK_STATUSES } from '@shared/types';
 import { STATUS_META } from '../lib/constants';
 import { timeAgo } from '../lib/format';
 import { isEditableTarget } from '../lib/keyboard';
 import { TaskChat } from './TaskChat';
 import { RenameReveal, useRenameAnimation } from './RenameTitle';
 import type { AgentRunSettings } from '../lib/api';
-import type { TaskStatus } from '@shared/types';
+import type { DelegationStatus, Task, TaskStatus } from '@shared/types';
+
+
+const DELEGATION_META: Record<DelegationStatus, { label: string; icon: React.ReactNode; tint: string }> = {
+  queued: { label: 'Queued', icon: <Clock size={11} strokeWidth={2.5} />, tint: 'border-zinc-200 bg-zinc-50 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300' },
+  running: { label: 'Running', icon: <Loader2 size={11} strokeWidth={2.5} className="animate-spin" />, tint: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-300' },
+  review: { label: 'In review', icon: <CheckCircle2 size={11} strokeWidth={2.5} />, tint: 'border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-900/70 dark:bg-purple-950/30 dark:text-purple-300' },
+  blocked: { label: 'Blocked', icon: <AlertTriangle size={11} strokeWidth={2.5} />, tint: 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-300' },
+  done: { label: 'Done', icon: <CheckCircle2 size={11} strokeWidth={2.5} />, tint: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-300' },
+};
+
+function DelegationBadge({ status }: { status: DelegationStatus | null }) {
+  if (!status || !DELEGATION_STATUSES.includes(status)) return null;
+  const meta = DELEGATION_META[status];
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${meta.tint}`}>
+      {meta.icon}
+      {meta.label}
+    </span>
+  );
+}
+
+function SubissuesPanel({ parent, subissues }: { parent: Task; subissues: Task[] }) {
+  if (parent.parent_task_id || subissues.length === 0) return null;
+
+  return (
+    <div className="border-y border-zinc-200 bg-zinc-50/70 px-3 py-3 dark:border-zinc-800 dark:bg-zinc-950/30 sm:px-6">
+      <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+        <GitBranch size={13} strokeWidth={2.5} />
+        Subissues
+        <span className="rounded-full bg-zinc-200 px-1.5 py-0.5 text-[10px] text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">{subissues.length}</span>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        {subissues.map((subissue) => {
+          const statusMeta = STATUS_META[subissue.status];
+          return (
+            <Link
+              key={subissue.id}
+              to={`/tasks/${subissue.id}`}
+              className="group rounded-lg border border-zinc-200 bg-white p-3 shadow-sm transition-[border-color,box-shadow,background-color] hover:border-zinc-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700"
+            >
+              <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${statusMeta.tint}`}>
+                  <StatusIcon status={subissue.status} />
+                  {statusMeta.label}
+                </span>
+                <DelegationBadge status={subissue.delegation_status} />
+              </div>
+              <div className="line-clamp-2 text-sm font-medium text-zinc-900 group-hover:text-zinc-950 dark:text-zinc-100 dark:group-hover:text-white">
+                {subissue.title}
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
+                <span>{timeAgo(subissue.updated_at)}</span>
+                <span className="font-semibold text-zinc-700 group-hover:underline dark:text-zinc-200">Chatverlauf öffnen →</span>
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 
 export function TaskDetailPage() {
   const { taskId } = useParams<{ taskId: string }>();
@@ -26,6 +88,8 @@ export function TaskDetailPage() {
   const tasksLoaded = useStore((s) => s.tasksLoaded);
   const upsertTask = useStore((s) => s.upsertTask);
   const removeTask = useStore((s) => s.removeTask);
+  const subissues = useStore((s) => (taskId ? s.subissuesByParent.get(taskId) ?? [] : []));
+  const setSubissues = useStore((s) => s.setSubissues);
 
   const [titleDraft, setTitleDraft] = useState('');
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -63,6 +127,19 @@ export function TaskDetailPage() {
       navigate(location.pathname, { replace: true, state: {} });
     }
   }, [taskId, initialMessage, initialSettings, navigate, location.pathname]);
+
+  useEffect(() => {
+    if (!task || task.parent_task_id) return;
+    let cancelled = false;
+    fetchSubissues(task.id)
+      .then((res) => {
+        if (!cancelled) setSubissues(task.id, res.subissues);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [task?.id, task?.parent_task_id, setSubissues]);
 
   useEffect(() => {
     if (!showMenu) return;
@@ -155,6 +232,9 @@ export function TaskDetailPage() {
   }
 
   const statusMeta = STATUS_META[task.status];
+  const parentTask = task.parent_task_id
+    ? useStore.getState().tasks.find((candidate) => candidate.id === task.parent_task_id) ?? null
+    : null;
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -217,6 +297,24 @@ export function TaskDetailPage() {
               <span className="text-xs text-zinc-400 dark:text-zinc-500 shrink-0">
                 {timeAgo(task.updated_at)}
               </span>
+              {task.parent_task_id && (
+                <span className="inline-flex max-w-[260px] items-center gap-1.5 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
+                  <GitBranch size={12} strokeWidth={2.5} className="shrink-0" />
+                  <span className="shrink-0">Subissue of</span>
+                  {parentTask ? (
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/tasks/${parentTask.id}`)}
+                      className="min-w-0 truncate font-medium text-zinc-800 underline decoration-zinc-300 underline-offset-2 hover:text-zinc-950 dark:text-zinc-100 dark:decoration-zinc-600 dark:hover:text-white"
+                      title={parentTask.title}
+                    >
+                      {parentTask.title}
+                    </button>
+                  ) : (
+                    <span className="min-w-0 truncate font-mono text-[11px]">{task.parent_task_id}</span>
+                  )}
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-1.5 sm:gap-2.5">
@@ -280,6 +378,7 @@ export function TaskDetailPage() {
       </div>
 
       <div className="w-full flex-1 flex flex-col min-h-0">
+        <SubissuesPanel parent={task} subissues={subissues} />
         <TaskChat taskId={task.id} initialMessage={initialMessage} initialSettings={initialSettings} />
       </div>
 

@@ -161,6 +161,35 @@ function settleRun(taskId: string, runId: string, context: ContextUsage | null):
   finishRun(taskId, ttl, runId);
 }
 
+export function startTaskChatRun(runTask: Task, content: string): { runId: string } {
+  const activeRun = getRunStatus(runTask.id);
+  if (isTaskRunActive(activeRun)) {
+    throw new Error('This task already has a message in progress');
+  }
+
+  let taskForRun = runTask;
+  if (taskForRun.status === 'in_review' || taskForRun.status === 'done') {
+    const updated = updateTask(taskForRun.id, { status: 'in_progress' });
+    if (updated) {
+      taskForRun = updated;
+      broadcast({ type: 'task_updated', task: updated });
+    }
+  }
+
+  const sessionId = taskForRun.id;
+  const { snapshot, state } = startRun(taskForRun.id, sessionId, content);
+  const delegatedRunTask = taskWithDelegationStatus(taskForRun, state);
+  if (delegatedRunTask && delegatedRunTask !== taskForRun) {
+    taskForRun = delegatedRunTask;
+    broadcast({ type: 'task_updated', task: delegatedRunTask });
+  }
+  broadcast({ type: 'task_run_updated', run: state });
+  broadcastLive(taskForRun.id, { type: 'snapshot', run: snapshot });
+  void consumeChatRun(taskForRun, sessionId, content, snapshot.runId);
+
+  return { runId: snapshot.runId };
+}
+
 async function streamChatTurn(
   runTask: Task,
   sessionId: string,

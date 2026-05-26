@@ -38,6 +38,26 @@ function taskRunEqual(a: TaskRunState | undefined, b: TaskRunState): boolean {
   );
 }
 
+function sortedSubissues(tasks: Task[], parentId: string): Task[] {
+  return tasks
+    .filter((candidate) => candidate.parent_task_id === parentId)
+    .sort((a, b) => a.created_at - b.created_at);
+}
+
+function buildSubissuesByParent(tasks: Task[]): Map<string, Task[]> {
+  const grouped = new Map<string, Task[]>();
+  for (const task of tasks) {
+    if (!task.parent_task_id) continue;
+    const existing = grouped.get(task.parent_task_id) ?? [];
+    existing.push(task);
+    grouped.set(task.parent_task_id, existing);
+  }
+  for (const subissues of grouped.values()) {
+    subissues.sort((a, b) => a.created_at - b.created_at);
+  }
+  return grouped;
+}
+
 export const useStore = create<AppState>((set) => ({
   tasks: [],
   taskRuns: new Map<string, TaskRunState>(),
@@ -45,26 +65,46 @@ export const useStore = create<AppState>((set) => ({
   sidebarCollapsed: localStorage.getItem('sidebarCollapsed') === 'true',
   subissuesByParent: new Map<string, Task[]>(),
 
-  setTasks: (tasks) => set({ tasks, tasksLoaded: true }),
+  setTasks: (tasks) => set({ tasks, tasksLoaded: true, subissuesByParent: buildSubissuesByParent(tasks) }),
 
   upsertTask: (task) =>
     set((state) => {
       const idx = state.tasks.findIndex((t) => t.id === task.id);
-      if (idx === -1) return { tasks: [...state.tasks, task] };
-      const existing = state.tasks[idx];
+      const existing = idx === -1 ? null : state.tasks[idx];
+      if (idx === -1) {
+        const tasks = [...state.tasks, task];
+        if (!task.parent_task_id) return { tasks };
+        const subissuesByParent = new Map(state.subissuesByParent);
+        subissuesByParent.set(task.parent_task_id, sortedSubissues(tasks, task.parent_task_id));
+        return { tasks, subissuesByParent };
+      }
       if (tasksEqual(existing, task)) return state;
       const next = [...state.tasks];
       next[idx] = task;
-      return { tasks: next };
+      if (!task.parent_task_id && !existing.parent_task_id) return { tasks: next };
+
+      const subissuesByParent = new Map(state.subissuesByParent);
+      const affectedParentIds = new Set<string>();
+      if (existing.parent_task_id) affectedParentIds.add(existing.parent_task_id);
+      if (task.parent_task_id) affectedParentIds.add(task.parent_task_id);
+      for (const parentId of affectedParentIds) {
+        subissuesByParent.set(parentId, sortedSubissues(next, parentId));
+      }
+      return { tasks: next, subissuesByParent };
     }),
 
   removeTask: (taskId) =>
     set((state) => {
+      const removed = state.tasks.find((t) => t.id === taskId);
       const tasks = state.tasks.filter((t) => t.id !== taskId);
-      if (!state.taskRuns.has(taskId)) return { tasks };
+      const subissuesByParent = removed?.parent_task_id ? new Map(state.subissuesByParent) : state.subissuesByParent;
+      if (removed?.parent_task_id) {
+        subissuesByParent.set(removed.parent_task_id, sortedSubissues(tasks, removed.parent_task_id));
+      }
+      if (!state.taskRuns.has(taskId)) return { tasks, subissuesByParent };
       const taskRuns = new Map(state.taskRuns);
       taskRuns.delete(taskId);
-      return { tasks, taskRuns };
+      return { tasks, taskRuns, subissuesByParent };
     }),
 
   setTaskRuns: (runs) =>

@@ -100,6 +100,7 @@ export function Board() {
   const grouped = useMemo(() => {
     const buckets: Record<TaskStatus, Task[]> = { in_progress: [], in_review: [], done: [] };
     for (const t of tasks) {
+      if (t.parent_task_id) continue;
       if (t.status in buckets) buckets[t.status].push(t);
     }
     for (const s of TASK_STATUSES) buckets[s].sort((a, b) => b.updated_at - a.updated_at);
