@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Link, useParams, useNavigate, useLocation } from 'react-router-dom';
-import { MoreHorizontal, Trash2, Loader2, Pencil, Check, GitBranch, AlertTriangle, CheckCircle2, Clock } from 'lucide-react';
+import { MoreHorizontal, Trash2, Loader2, Pencil, Check, GitBranch, AlertTriangle, CheckCircle2, Clock, ChevronUp } from 'lucide-react';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { StatusIcon } from './StatusIcon';
 import { useStore, optimisticMoveTask } from '../lib/store';
@@ -35,44 +35,84 @@ function DelegationBadge({ status }: { status: DelegationStatus | null }) {
   );
 }
 
-function SubissuesPanel({ parent, subissues }: { parent: Task; subissues: Task[] }) {
+function SubissueRail({ parent, subissues }: { parent: Task; subissues: Task[] }) {
+  const [mobileOpen, setMobileOpen] = useState(false);
+
   if (parent.parent_task_id || subissues.length === 0) return null;
 
-  return (
-    <div className="border-y border-zinc-200 bg-zinc-50/70 px-3 py-3 dark:border-zinc-800 dark:bg-zinc-950/30 sm:px-6">
-      <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-        <GitBranch size={13} strokeWidth={2.5} />
-        Subissues
-        <span className="rounded-full bg-zinc-200 px-1.5 py-0.5 text-[10px] text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">{subissues.length}</span>
-      </div>
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-        {subissues.map((subissue) => {
-          const statusMeta = STATUS_META[subissue.status];
-          return (
-            <Link
-              key={subissue.id}
-              to={`/tasks/${subissue.id}`}
-              className="group rounded-lg border border-zinc-200 bg-white p-3 shadow-sm transition-[border-color,box-shadow,background-color] hover:border-zinc-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700"
-            >
-              <div className="mb-2 flex flex-wrap items-center gap-1.5">
-                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${statusMeta.tint}`}>
-                  <StatusIcon status={subissue.status} />
-                  {statusMeta.label}
-                </span>
-                <DelegationBadge status={subissue.delegation_status} />
-              </div>
-              <div className="line-clamp-2 text-sm font-medium text-zinc-900 group-hover:text-zinc-950 dark:text-zinc-100 dark:group-hover:text-white">
-                {subissue.title}
-              </div>
-              <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
-                <span>{timeAgo(subissue.updated_at)}</span>
-                <span className="font-semibold text-zinc-700 group-hover:underline dark:text-zinc-200">Chatverlauf öffnen →</span>
-              </div>
-            </Link>
-          );
-        })}
-      </div>
+  const list = (
+    <div className="flex gap-2 overflow-x-auto px-3 py-3 sm:px-4 lg:min-h-0 lg:flex-1 lg:flex-col lg:overflow-y-auto lg:overflow-x-hidden">
+      {subissues.map((subissue) => {
+        const statusMeta = STATUS_META[subissue.status];
+        return (
+          <Link
+            key={subissue.id}
+            to={`/tasks/${subissue.id}`}
+            className={`group flex min-w-[260px] flex-col rounded-xl border px-3 py-2.5 shadow-sm transition-[border-color,box-shadow,transform] active:scale-[0.98] lg:min-w-0 ${statusMeta.tint}`}
+          >
+            <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${statusMeta.tint}`}>
+                <StatusIcon status={subissue.status} />
+                {statusMeta.label}
+              </span>
+              <DelegationBadge status={subissue.delegation_status} />
+            </div>
+            <div className="line-clamp-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+              {subissue.title}
+            </div>
+            <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
+              <span className="truncate">{timeAgo(subissue.updated_at)}</span>
+              {subissue.assignee && <span className="max-w-[90px] truncate">{subissue.assignee}</span>}
+              <span className="shrink-0 font-semibold text-zinc-700 group-hover:underline dark:text-zinc-200">Open →</span>
+            </div>
+          </Link>
+        );
+      })}
     </div>
+  );
+
+  return (
+    <>
+      {/* Desktop: right sidebar */}
+      <aside className="hidden min-h-0 flex-col border-zinc-200 bg-zinc-50/80 dark:border-zinc-800 dark:bg-zinc-950/30 lg:flex lg:w-[340px] lg:shrink-0 lg:border-l xl:w-[380px]">
+        <div className="flex items-center gap-2 border-b border-zinc-200 px-3 py-3 dark:border-zinc-800 sm:px-4">
+          <GitBranch size={13} strokeWidth={2.5} className="shrink-0 text-zinc-500" />
+          <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Subissues</span>
+          <span className="rounded-full bg-zinc-200 px-1.5 py-0.5 text-[10px] text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">{subissues.length}</span>
+        </div>
+        {list}
+      </aside>
+
+      {/* Mobile: bottom bar + expandable drawer */}
+      <div className="shrink-0 border-t border-zinc-200 bg-zinc-50/80 dark:border-zinc-800 dark:bg-zinc-950/30 lg:hidden">
+        <button
+          type="button"
+          onClick={() => setMobileOpen(!mobileOpen)}
+          className="flex w-full items-center justify-between gap-3 px-3 py-3 sm:px-4"
+        >
+          <div className="flex min-w-0 items-center gap-2">
+            <GitBranch size={13} strokeWidth={2.5} className="shrink-0 text-zinc-500" />
+            <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+              Subissues
+            </span>
+            <span className="rounded-full bg-zinc-200 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+              {subissues.length}
+            </span>
+          </div>
+          <ChevronUp
+            size={16}
+            strokeWidth={2}
+            className={`shrink-0 text-zinc-400 transition-transform duration-200 ${mobileOpen ? '' : 'rotate-180'}`}
+          />
+        </button>
+
+        {mobileOpen && (
+          <div className="max-h-[50vh] overflow-y-auto border-t border-zinc-200 dark:border-zinc-800">
+            {list}
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -377,9 +417,9 @@ export function TaskDetailPage() {
         </div>
       </div>
 
-      <div className="w-full flex-1 flex flex-col min-h-0">
-        <SubissuesPanel parent={task} subissues={subissues} />
+      <div className="w-full flex-1 flex min-h-0 flex-col-reverse lg:flex-row">
         <TaskChat taskId={task.id} initialMessage={initialMessage} initialSettings={initialSettings} />
+        <SubissueRail parent={task} subissues={subissues} />
       </div>
 
       {showDeleteConfirm && (

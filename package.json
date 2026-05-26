@@ -64,8 +64,8 @@
   "devDependencies": {
     "@types/archiver": "^7.0.0",
     "@types/better-sqlite3": "^7.6.12",
-    "@types/cors": "^2.8.17",
-    "@types/express": "^5.0.0",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
     "@types/multer": "^2.1.0",
     "@types/node": "^22.10.5",
     "@types/react": "^19.0.0",
