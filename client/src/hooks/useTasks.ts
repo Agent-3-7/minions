@@ -79,7 +79,11 @@ export function useTasks() {
           if (event.type === 'task_created' || event.type === 'task_updated') {
             if (event.type === 'task_updated') {
               const prev = useStore.getState().tasks.find((t) => t.id === event.task.id);
-              if (prev && prev.status === 'in_progress' && event.task.status === 'in_review') {
+              if (
+                prev
+                && (prev.status === 'todo' || prev.status === 'in_progress')
+                && event.task.status === 'in_review'
+              ) {
                 playCompletionSound();
               }
             }

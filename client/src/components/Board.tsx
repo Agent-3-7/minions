@@ -99,7 +99,12 @@ export function Board() {
   const removeTask = useStore((s) => s.removeTask);
   const [scheduledTasks, setScheduledTasks] = useState<ScheduledTask[]>([]);
   const grouped = useMemo(() => {
-    const buckets: Record<TaskStatus, Task[]> = { in_progress: [], in_review: [], done: [] };
+    const buckets: Record<TaskStatus, Task[]> = {
+      todo: [],
+      in_progress: [],
+      in_review: [],
+      done: [],
+    };
     for (const t of tasks) {
       if (t.parent_task_id) continue;
       if (t.status in buckets) buckets[t.status].push(t);
@@ -215,7 +220,7 @@ export function Board() {
     >
       <div className="flex flex-1 min-h-0 flex-col">
         <RecurringSummaryStrip scheduledTasks={scheduledTasks} />
-        <div className="flex flex-1 gap-4 overflow-x-auto p-3 min-h-0 sm:gap-6 sm:p-6">
+        <div className="flex flex-1 snap-x snap-mandatory gap-4 overflow-x-auto overflow-y-hidden p-3 min-h-0 overscroll-x-contain pb-5 sm:gap-6 sm:p-6 sm:pb-6">
           {TASK_STATUSES.map((status, index) => (
             <Column
               key={status}

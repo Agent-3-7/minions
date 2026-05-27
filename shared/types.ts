@@ -1,4 +1,4 @@
-export const TASK_STATUSES = ['in_progress', 'in_review', 'done'] as const;
+export const TASK_STATUSES = ['todo', 'in_progress', 'in_review', 'done'] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 
 export const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const;

@@ -2,6 +2,12 @@ import type { TaskStatus } from '@shared/types';
 
 export function StatusIcon({ status }: { status: TaskStatus }) {
   switch (status) {
+    case 'todo':
+      return (
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <circle cx="7" cy="7" r="5.5" stroke="#0ea5e9" strokeWidth="1.5" />
+        </svg>
+      );
     case 'in_progress':
       return (
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none">

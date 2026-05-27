@@ -170,6 +170,12 @@ export function fetchSubtasks(taskId: string) {
   return request<SubtaskResponse>(`/tasks/${taskId}/subtasks`);
 }
 
+export function syncTaskKanbanSubtasks(taskId: string) {
+  return request<SubtaskResponse & { imported: number; updated: number }>(`/tasks/${taskId}/kanban/sync`, {
+    method: 'POST',
+  });
+}
+
 export function createSubtask(taskId: string, input: SubtaskInput) {
   return request<SubtaskResponse>(`/tasks/${taskId}/subtasks`, {
     method: 'POST',
