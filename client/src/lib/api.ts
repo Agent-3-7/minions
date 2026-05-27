@@ -29,6 +29,7 @@ import type {
   ClawHubScanResult,
   KanbanLogsResponse,
   KanbanTaskResponse,
+  GitHubStatusResponse,
   SubtaskInput,
   SubtaskResponse,
 } from '@shared/types';
@@ -180,6 +181,16 @@ export function fetchTaskKanban(taskId: string) {
 
 export function fetchTaskKanbanLogs(taskId: string, limit = 50) {
   return request<KanbanLogsResponse>(`/tasks/${taskId}/kanban/logs?limit=${limit}`);
+}
+
+export function fetchTaskGitHubStatus(taskId: string) {
+  return request<GitHubStatusResponse>(`/tasks/${taskId}/github`);
+}
+
+export function refreshTaskGitHubStatus(taskId: string) {
+  return request<GitHubStatusResponse & { refreshed: boolean; note?: string; error?: string }>(`/tasks/${taskId}/github/refresh`, {
+    method: 'POST',
+  });
 }
 
 export function fetchScheduledTasks(includeDisabled = true, limit = 100) {

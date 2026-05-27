@@ -61,6 +61,17 @@ export interface Task {
   hermes_kanban_task_id: string | null;
   /** Delegation profile name (Hermes profile). */
   delegation_profile: string | null;
+  /** Source marker: 'agentcontrol' or 'hermes-kanban-sync' (nullable). */
+  external_source: string | null;
+  /** GitHub PR tracking fields */
+  github_pr_url: string | null;
+  github_pr_number: number | null;
+  github_pr_state: string | null;
+  github_pr_head_ref: string | null;
+  github_pr_head_sha: string | null;
+  github_checks_status: string | null;
+  github_checks_summary: string | null;
+  github_checks_updated_at: number | null;
   /** Computed: count of direct child subtasks. Not stored in DB. */
   child_count?: number;
 }
@@ -303,6 +314,18 @@ export interface KanbanLogsResponse {
   logs: KanbanLogEntry[];
   runs: KanbanRunEntry[];
   comments: KanbanCommentEntry[];
+}
+
+export interface GitHubStatusResponse {
+  taskId: string;
+  github_pr_url: string | null;
+  github_pr_number: number | null;
+  github_pr_state: string | null;
+  github_pr_head_ref: string | null;
+  github_pr_head_sha: string | null;
+  github_checks_status: string | null;
+  github_checks_summary: string | null;
+  github_checks_updated_at: number | null;
 }
 
 export interface ScheduledTaskOrigin {

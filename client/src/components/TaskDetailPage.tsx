@@ -1,12 +1,12 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useParams, useNavigate, useLocation } from 'react-router-dom';
-import { MoreHorizontal, Trash2, Loader2, Pencil, Check, GitBranch, AlertTriangle, CheckCircle2, Clock, ArrowRight, MessageSquareText, X, Activity } from 'lucide-react';
+import { MoreHorizontal, Trash2, Loader2, Pencil, Check, GitBranch, AlertTriangle, CheckCircle2, Clock, ArrowRight, MessageSquareText, X, Activity, ExternalLink, GitPullRequest } from 'lucide-react';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { StatusIcon } from './StatusIcon';
 import { useStore, optimisticMoveTask } from '../lib/store';
 import { toast } from 'sonner';
-import { deleteTask, fetchSubtasks, fetchTask, fetchTaskKanban, fetchTaskKanbanLogs, patchTask, moveTask, markTaskViewed } from '../lib/api';
+import { deleteTask, fetchSubtasks, fetchTask, fetchTaskKanban, fetchTaskKanbanLogs, fetchTaskGitHubStatus, refreshTaskGitHubStatus, patchTask, moveTask, markTaskViewed } from '../lib/api';
 import { DELEGATION_STATUSES, TASK_STATUSES } from '@shared/types';
 import { STATUS_META } from '../lib/constants';
 import { timeAgo } from '../lib/format';
@@ -24,6 +24,26 @@ const DELEGATION_META: Record<DelegationStatus, { label: string; icon: React.Rea
   blocked: { label: 'Blocked', icon: <AlertTriangle size={11} strokeWidth={2.5} />, tint: 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-300' },
   done: { label: 'Done', icon: <CheckCircle2 size={11} strokeWidth={2.5} />, tint: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-300' },
 };
+
+const GITHUB_CHECK_TINTS: Record<string, string> = {
+  success: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-300',
+  failure: 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-300',
+  pending: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-300',
+  unknown: 'border-zinc-200 bg-zinc-50 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300',
+};
+
+interface GitHubStatusState {
+  prUrl: string | null;
+  prNumber: number | null;
+  prState: string | null;
+  headRef: string | null;
+  headSha: string | null;
+  checksStatus: string | null;
+  checksSummary: string | null;
+  checksUpdatedAt: number | null;
+  refreshing: boolean;
+  syncError: string | null;
+}
 
 function DelegationBadge({ status }: { status: DelegationStatus | null }) {
   if (!status || !DELEGATION_STATUSES.includes(status)) return null;
@@ -90,6 +110,74 @@ function KanbanPanel({ info, logs }: { info: KanbanTaskResponse | null; logs: Ka
           <div className="px-2 py-2 text-[11px] text-zinc-400 dark:text-zinc-500">No Kanban events yet.</div>
         )}
       </div>
+    </section>
+  );
+}
+
+function GitHubPanel({ status, onRefresh }: { status: GitHubStatusState; onRefresh: () => void }) {
+  if (!status.prNumber && !status.prUrl && !status.checksStatus) return null;
+
+  const prStateLabel = status.prState ? (status.prState === 'OPEN' ? 'Open' : status.prState === 'MERGED' ? 'Merged' : 'Closed') : null;
+  const checkTint = GITHUB_CHECK_TINTS[status.checksStatus ?? 'unknown'] ?? GITHUB_CHECK_TINTS.unknown;
+
+  return (
+    <section className="border-b border-zinc-200 bg-zinc-50/50 px-3 py-3 dark:border-zinc-800 dark:bg-zinc-950/40 sm:px-6">
+      <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+        <span className="inline-flex items-center gap-1.5 font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+          <GitPullRequest size={13} strokeWidth={2.5} />
+          GitHub
+        </span>
+        {status.prNumber && (
+          <span className="rounded-md bg-zinc-200 px-1.5 py-0.5 font-mono text-[11px] text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
+            PR #{status.prNumber}
+          </span>
+        )}
+        {prStateLabel && (
+          <span className="rounded-md border border-zinc-200 bg-white px-1.5 py-0.5 text-[11px] text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
+            {prStateLabel}
+          </span>
+        )}
+        {status.checksStatus && (
+          <span className={`rounded-md border px-1.5 py-0.5 text-[11px] font-semibold ${checkTint}`}>
+            {status.checksStatus}
+          </span>
+        )}
+        {status.refreshing ? (
+          <Loader2 size={12} className="animate-spin text-zinc-400" />
+        ) : (
+          <button
+            onClick={onRefresh}
+            title="Refresh GitHub status"
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-zinc-500 transition-colors hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+          >
+            <Activity size={11} strokeWidth={2.5} />
+            Sync
+          </button>
+        )}
+        {status.prUrl && (
+          <a
+            href={status.prUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-zinc-500 transition-colors hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+          >
+            <ExternalLink size={11} strokeWidth={2.5} />
+            Open
+          </a>
+        )}
+      </div>
+      {status.checksSummary && (
+        <p className="mb-2 text-xs text-zinc-600 dark:text-zinc-300">{status.checksSummary}</p>
+      )}
+      {status.headRef && (
+        <p className="mb-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+          Branch: <span className="font-mono font-semibold">{status.headRef}</span>
+          {status.headSha && <span className="ml-1 font-mono text-zinc-400">({status.headSha.slice(0, 7)})</span>}
+        </p>
+      )}
+      {status.syncError && (
+        <p className="text-[11px] text-red-500 dark:text-red-400">{status.syncError}</p>
+      )}
     </section>
   );
 }
@@ -256,6 +344,18 @@ export function TaskDetailPage() {
   const [detailFetchFailed, setDetailFetchFailed] = useState(false);
   const [kanbanInfo, setKanbanInfo] = useState<KanbanTaskResponse | null>(null);
   const [kanbanLogs, setKanbanLogs] = useState<KanbanLogsResponse | null>(null);
+  const [githubStatus, setGitHubStatus] = useState<GitHubStatusState>({
+    prUrl: null,
+    prNumber: null,
+    prState: null,
+    headRef: null,
+    headSha: null,
+    checksStatus: null,
+    checksSummary: null,
+    checksUpdatedAt: null,
+    refreshing: false,
+    syncError: null,
+  });
   const titleAnimation = useRenameAnimation(task?.title ?? '', task?.id ?? null);
 
   useEffect(() => {
@@ -377,6 +477,53 @@ export function TaskDetailPage() {
       window.clearInterval(timer);
     };
   }, [task?.id, task?.hermes_kanban_task_id]);
+
+  // GitHub status: seed from task fields on load, allow manual refresh
+  useEffect(() => {
+    if (!task) return;
+    setGitHubStatus((prev) => ({
+      ...prev,
+      prUrl: task.github_pr_url ?? prev.prUrl,
+      prNumber: task.github_pr_number ?? prev.prNumber,
+      prState: task.github_pr_state ?? prev.prState,
+      headRef: task.github_pr_head_ref ?? prev.headRef,
+      headSha: task.github_pr_head_sha ?? prev.headSha,
+      checksStatus: task.github_checks_status ?? prev.checksStatus,
+      checksSummary: task.github_checks_summary ?? prev.checksSummary,
+      checksUpdatedAt: task.github_checks_updated_at ?? prev.checksUpdatedAt,
+    }));
+  }, [task?.github_pr_url, task?.github_pr_number, task?.github_pr_state, task?.github_pr_head_ref, task?.github_pr_head_sha, task?.github_checks_status, task?.github_checks_summary, task?.github_checks_updated_at]);
+
+  const handleRefreshGitHub = useCallback(async () => {
+    if (!taskId) return;
+    setGitHubStatus((prev) => ({ ...prev, refreshing: true, syncError: null }));
+    try {
+      const data = await refreshTaskGitHubStatus(taskId);
+      setGitHubStatus({
+        prUrl: data.github_pr_url ?? null,
+        prNumber: data.github_pr_number ?? null,
+        prState: data.github_pr_state ?? null,
+        headRef: data.github_pr_head_ref ?? null,
+        headSha: data.github_pr_head_sha ?? null,
+        checksStatus: data.github_checks_status ?? null,
+        checksSummary: data.github_checks_summary ?? null,
+        checksUpdatedAt: data.github_checks_updated_at ?? null,
+        refreshing: false,
+        syncError: data.error ?? null,
+      });
+      if (data.github_pr_url || data.github_checks_status) {
+        toast('GitHub status synced', {
+          icon: <GitPullRequest size={14} strokeWidth={2.5} className="text-zinc-500 dark:text-zinc-400" />,
+        });
+      }
+    } catch (err) {
+      setGitHubStatus((prev) => ({
+        ...prev,
+        refreshing: false,
+        syncError: err instanceof Error ? err.message : 'Sync failed',
+      }));
+    }
+  }, [taskId]);
 
   useEffect(() => {
     if (!showMenu) return;
@@ -632,6 +779,7 @@ export function TaskDetailPage() {
       </div>
 
       <KanbanPanel info={kanbanInfo} logs={kanbanLogs} />
+      <GitHubPanel status={githubStatus} onRefresh={handleRefreshGitHub} />
 
       <div className="w-full flex-1 flex flex-row min-h-0">
         <div className="flex-1 flex flex-col min-h-0">

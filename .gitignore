@@ -9,3 +9,4 @@ __pycache__/
 *$py.class
 
 debug.md
+.worktrees/

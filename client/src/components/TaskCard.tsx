@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { useDraggable } from '@dnd-kit/core';
-import { Loader2, MoreHorizontal, Target } from 'lucide-react';
+import { Loader2, MoreHorizontal, Target, GitBranch, GitPullRequest, CheckCircle2, XCircle, AlertTriangle, Clock } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { Task, TaskRunState } from '@shared/types';
 import { goalTurnLabel, timeAgo } from '../lib/format';
@@ -10,6 +10,42 @@ import { TaskContextMenu } from './TaskContextMenu';
 import { RenameTitle } from './RenameTitle';
 
 const BUSY_LABELS: Record<string, string> = { compact: 'Compacting...', goal: 'Working toward goal...' };
+
+function CompactKanbanBadge({ task }: { task: Task }) {
+  if (!task.hermes_kanban_task_id || !task.delegation_profile) return null;
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-700 dark:border-violet-900/70 dark:bg-violet-950/30 dark:text-violet-300">
+      <GitBranch size={10} strokeWidth={2.5} className="shrink-0" />
+      <span className="shrink-0">{task.delegation_profile}</span>
+    </span>
+  );
+}
+
+function CompactGitHubBadge({ task }: { task: Task }) {
+  if (!task.github_pr_number || !task.github_pr_state) return null;
+
+  const stateIcons: Record<string, React.ReactNode> = {
+    OPEN: <GitPullRequest size={10} strokeWidth={2.5} className="shrink-0" />,
+    MERGED: <CheckCircle2 size={10} strokeWidth={2.5} className="shrink-0" />,
+    CLOSED: <XCircle size={10} strokeWidth={2.5} className="shrink-0" />,
+  };
+
+  const checkTints: Record<string, string> = {
+    success: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-300',
+    failure: 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-300',
+    pending: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-300',
+    unknown: 'border-zinc-200 bg-zinc-50 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300',
+  };
+
+  const checks = task.github_checks_status || 'unknown';
+
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${checkTints[checks]}`}>
+      {stateIcons[task.github_pr_state] || <GitPullRequest size={10} strokeWidth={2.5} className="shrink-0" />}
+      <span className="shrink-0">PR #{task.github_pr_number}</span>
+    </span>
+  );
+}
 
 function TaskCardBody({ task, run }: { task: Task; run?: TaskRunState }) {
   const isUnseen = hasUnseenAgentResponse(task);
@@ -43,6 +79,12 @@ function TaskCardBody({ task, run }: { task: Task; run?: TaskRunState }) {
         >
           {task.description}
         </p>
+      )}
+      {(task.hermes_kanban_task_id || task.github_pr_number) && (
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <CompactKanbanBadge task={task} />
+          <CompactGitHubBadge task={task} />
+        </div>
       )}
       <div className="mt-3 -mr-[18px] flex min-w-0 items-center gap-2">
         <div className={`flex min-w-0 flex-1 items-center gap-1.5 text-[11px] leading-none ${timeRowClass}`}>

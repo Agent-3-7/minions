@@ -12,14 +12,41 @@ import Database from 'better-sqlite3';
 import { existsSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { resolveHermesHome } from '../paths.js';
+import {
+  getTaskByKanbanId,
+  getSubtasks,
+  insertTask,
+  updateTask,
+} from '../db/queries.js';
+import { broadcast } from '../events.js';
 import type {
+  DelegationStatus,
   KanbanCommentEntry,
   KanbanLogEntry,
   KanbanRunEntry,
   KanbanTaskInfo,
+  Task,
+  TaskStatus,
 } from '../../shared/types.js';
 
 export const KANBAN_BOARD = 'jarvis-mission-control';
+
+type KanbanTaskRow = {
+  id: string;
+  title: string;
+  body: string | null;
+  assignee: string | null;
+  status: string;
+  priority: number | null;
+  created_by: string | null;
+  created_at: number;
+  started_at: number | null;
+  completed_at: number | null;
+  current_run_id: number | null;
+  skills: string | null;
+  branch_name: string | null;
+  session_id: string | null;
+};
 
 function resolveKanbanRoot(): string {
   const override = process.env.HERMES_KANBAN_HOME?.trim();
@@ -71,6 +98,31 @@ function clampLimit(limit: number, fallback: number, max: number): number {
   return Math.min(Math.floor(limit), max);
 }
 
+function mapTaskRow(row: KanbanTaskRow | undefined): KanbanTaskInfo | null {
+  if (!row) return null;
+  const metadata = row.current_run_id
+    ? {}
+    : {};
+  return {
+    kanban_id: row.id,
+    title: row.title,
+    status: row.status,
+    assignee: row.assignee,
+    body: row.body,
+    outcome: null,
+    summary: null,
+    error: null,
+    created_at: row.created_at,
+    started_at: row.started_at,
+    completed_at: row.completed_at,
+    current_run_id: row.current_run_id,
+    latest_run_id: null,
+    latest_run_status: null,
+    latest_run_profile: null,
+    latest_run_metadata: metadata,
+  };
+}
+
 export function createKanbanTask(
   title: string,
   assigneeProfile: string,
@@ -114,37 +166,110 @@ export function getKanbanTaskInfo(kanbanId: string | null): KanbanTaskInfo | nul
   if (!conn) return null;
 
   try {
-    const row = conn.prepare('SELECT * FROM tasks WHERE id = ?').get(kanbanId) as Record<string, unknown> | undefined;
-    if (!row) return null;
-
-    const latestRun = conn
-      .prepare(
-        `SELECT id, profile, status, outcome, summary, metadata, error, started_at, ended_at
-         FROM task_runs
-         WHERE task_id = ?
-         ORDER BY id DESC
-         LIMIT 1`,
+    const row = conn.prepare(`
+      SELECT
+        t.*,
+        r.id AS latest_run_id,
+        r.status AS latest_run_status,
+        r.outcome,
+        r.summary,
+        r.error,
+        r.profile AS latest_run_profile,
+        r.metadata AS latest_run_metadata
+      FROM tasks t
+      LEFT JOIN task_runs r ON r.id = (
+        SELECT id FROM task_runs
+        WHERE task_id = t.id
+        ORDER BY started_at DESC
+        LIMIT 1
       )
-      .get(kanbanId) as Record<string, unknown> | undefined;
+      WHERE t.id = ?
+    `).get(kanbanId) as (KanbanTaskRow & {
+      latest_run_id: number | null;
+      latest_run_status: string | null;
+      outcome: string | null;
+      summary: string | null;
+      error: string | null;
+      latest_run_profile: string | null;
+      latest_run_metadata: string | null;
+    }) | undefined;
 
+    if (!row) return null;
     return {
-      kanban_id: String(row.id),
-      title: String(row.title ?? ''),
-      status: String(row.status ?? ''),
-      assignee: typeof row.assignee === 'string' ? row.assignee : null,
-      body: typeof row.body === 'string' ? row.body : null,
-      outcome: typeof latestRun?.outcome === 'string' ? latestRun.outcome : null,
-      summary: typeof latestRun?.summary === 'string' ? latestRun.summary : null,
-      error: typeof latestRun?.error === 'string' ? latestRun.error : null,
-      created_at: Number(row.created_at ?? 0),
-      started_at: row.started_at === null || row.started_at === undefined ? null : Number(row.started_at),
-      completed_at: row.completed_at === null || row.completed_at === undefined ? null : Number(row.completed_at),
-      current_run_id: row.current_run_id === null || row.current_run_id === undefined ? null : Number(row.current_run_id),
-      latest_run_id: latestRun?.id === null || latestRun?.id === undefined ? null : Number(latestRun.id),
-      latest_run_status: typeof latestRun?.status === 'string' ? latestRun.status : null,
-      latest_run_profile: typeof latestRun?.profile === 'string' ? latestRun.profile : null,
-      latest_run_metadata: parseJsonRecord(latestRun?.metadata),
+      kanban_id: row.id,
+      title: row.title,
+      status: row.status,
+      assignee: row.assignee,
+      body: row.body,
+      outcome: row.outcome,
+      summary: row.summary,
+      error: row.error,
+      created_at: row.created_at,
+      started_at: row.started_at,
+      completed_at: row.completed_at,
+      current_run_id: row.current_run_id,
+      latest_run_id: row.latest_run_id,
+      latest_run_status: row.latest_run_status,
+      latest_run_profile: row.latest_run_profile,
+      latest_run_metadata: parseJsonRecord(row.latest_run_metadata),
     };
+  } finally {
+    conn.close();
+  }
+}
+
+export function getKanbanChildren(parentKanbanId: string): KanbanTaskInfo[] {
+  const conn = openKanbanDb();
+  if (!conn) return [];
+
+  try {
+    const rows = conn.prepare(`
+      SELECT t.*
+      FROM tasks t
+      INNER JOIN task_links l ON l.child_id = t.id
+      WHERE l.parent_id = ?
+      ORDER BY t.created_at ASC
+    `).all(parentKanbanId) as KanbanTaskRow[];
+    return rows.map(mapTaskRow).filter((task): task is KanbanTaskInfo => task !== null);
+  } finally {
+    conn.close();
+  }
+}
+
+export function getKanbanChildIds(parentKanbanId: string): string[] {
+  const conn = openKanbanDb();
+  if (!conn) return [];
+
+  try {
+    const rows = conn.prepare('SELECT child_id FROM task_links WHERE parent_id = ?').all(parentKanbanId) as { child_id: string }[];
+    return rows.map(row => row.child_id);
+  } finally {
+    conn.close();
+  }
+}
+
+export function findKanbanTaskByAgentControlTaskId(acTaskId: string): KanbanTaskInfo | null {
+  const conn = openKanbanDb();
+  if (!conn) return null;
+
+  try {
+    const bodyMatch = conn.prepare(`
+      SELECT * FROM tasks
+      WHERE body LIKE ? OR body LIKE ? OR body LIKE ?
+      ORDER BY created_at DESC
+      LIMIT 1
+    `).get(`%(${acTaskId})%`, `%ac_parent: ${acTaskId}%`, `%AgentControl subtask id: ${acTaskId}%`) as KanbanTaskRow | undefined;
+    if (bodyMatch) return mapTaskRow(bodyMatch);
+
+    const runMatch = conn.prepare(`
+      SELECT t.*
+      FROM tasks t
+      INNER JOIN task_runs r ON r.task_id = t.id
+      WHERE r.metadata LIKE ? OR r.summary LIKE ?
+      ORDER BY r.started_at DESC
+      LIMIT 1
+    `).get(`%${acTaskId}%`, `%${acTaskId}%`) as KanbanTaskRow | undefined;
+    return mapTaskRow(runMatch);
   } finally {
     conn.close();
   }
@@ -157,23 +282,31 @@ export function getKanbanLogs(kanbanId: string | null, limit = 50): KanbanLogEnt
   if (!conn) return [];
 
   try {
-    const safeLimit = clampLimit(limit, 50, 200);
-    const rows = conn
-      .prepare(
-        `SELECT id, run_id, kind, payload, created_at
-         FROM task_events
-         WHERE task_id = ?
-         ORDER BY id DESC
-         LIMIT ?`,
-      )
-      .all(kanbanId, safeLimit) as Array<Record<string, unknown>>;
+    const rows = conn.prepare(`
+      SELECT
+        id AS log_id,
+        run_id,
+        kind AS event_kind,
+        payload,
+        created_at
+      FROM task_events
+      WHERE task_id = ?
+      ORDER BY created_at DESC
+      LIMIT ?
+    `).all(kanbanId, clampLimit(limit, 50, 200)) as Array<{
+      log_id: number;
+      run_id: number | null;
+      event_kind: string;
+      payload: string | null;
+      created_at: number;
+    }>;
 
-    return rows.map((r) => ({
-      log_id: Number(r.id),
-      run_id: r.run_id === null || r.run_id === undefined ? null : Number(r.run_id),
-      event_kind: String(r.kind ?? ''),
-      payload: parseJsonRecord(r.payload),
-      created_at: Number(r.created_at ?? 0),
+    return rows.map(row => ({
+      log_id: row.log_id,
+      run_id: row.run_id,
+      event_kind: row.event_kind,
+      payload: parseJsonRecord(row.payload),
+      created_at: row.created_at,
     }));
   } finally {
     conn.close();
@@ -187,28 +320,46 @@ export function getKanbanRuns(kanbanId: string | null, limit = 20): KanbanRunEnt
   if (!conn) return [];
 
   try {
-    const safeLimit = clampLimit(limit, 20, 100);
-    const rows = conn
-      .prepare(
-        `SELECT id, profile, status, outcome, started_at, ended_at, summary, metadata, error, worker_pid
-         FROM task_runs
-         WHERE task_id = ?
-         ORDER BY id DESC
-         LIMIT ?`,
-      )
-      .all(kanbanId, safeLimit) as Array<Record<string, unknown>>;
+    const rows = conn.prepare(`
+      SELECT
+        id AS run_id,
+        profile,
+        status,
+        outcome,
+        started_at,
+        ended_at,
+        summary,
+        metadata,
+        error,
+        worker_pid
+      FROM task_runs
+      WHERE task_id = ?
+      ORDER BY started_at DESC
+      LIMIT ?
+    `).all(kanbanId, clampLimit(limit, 20, 100)) as Array<{
+      run_id: number;
+      profile: string | null;
+      status: string;
+      outcome: string | null;
+      started_at: number;
+      ended_at: number | null;
+      summary: string | null;
+      metadata: string | null;
+      error: string | null;
+      worker_pid: number | null;
+    }>;
 
-    return rows.map((r) => ({
-      run_id: Number(r.id),
-      profile: typeof r.profile === 'string' ? r.profile : null,
-      status: String(r.status ?? ''),
-      outcome: typeof r.outcome === 'string' ? r.outcome : null,
-      started_at: Number(r.started_at ?? 0),
-      ended_at: r.ended_at === null || r.ended_at === undefined ? null : Number(r.ended_at),
-      summary: typeof r.summary === 'string' ? r.summary : null,
-      metadata: parseJsonRecord(r.metadata),
-      error: typeof r.error === 'string' ? r.error : null,
-      worker_pid: r.worker_pid === null || r.worker_pid === undefined ? null : Number(r.worker_pid),
+    return rows.map(row => ({
+      run_id: row.run_id,
+      profile: row.profile,
+      status: row.status,
+      outcome: row.outcome,
+      started_at: row.started_at,
+      ended_at: row.ended_at,
+      summary: row.summary,
+      metadata: parseJsonRecord(row.metadata),
+      error: row.error,
+      worker_pid: row.worker_pid,
     }));
   } finally {
     conn.close();
@@ -222,24 +373,119 @@ export function getKanbanComments(kanbanId: string | null, limit = 20): KanbanCo
   if (!conn) return [];
 
   try {
-    const safeLimit = clampLimit(limit, 20, 100);
-    const rows = conn
-      .prepare(
-        `SELECT id, author, body, created_at
-         FROM task_comments
-         WHERE task_id = ?
-         ORDER BY id DESC
-         LIMIT ?`,
-      )
-      .all(kanbanId, safeLimit) as Array<Record<string, unknown>>;
+    const rows = conn.prepare(`
+      SELECT
+        id AS comment_id,
+        author,
+        body,
+        created_at
+      FROM task_comments
+      WHERE task_id = ?
+      ORDER BY created_at DESC
+      LIMIT ?
+    `).all(kanbanId, clampLimit(limit, 20, 100)) as KanbanCommentEntry[];
 
-    return rows.map((r) => ({
-      comment_id: Number(r.id),
-      author: String(r.author ?? ''),
-      body: String(r.body ?? ''),
-      created_at: Number(r.created_at ?? 0),
-    }));
+    return rows;
   } finally {
     conn.close();
   }
+}
+
+export const getKanbanTaskRuns = getKanbanRuns;
+export const getKanbanTaskEvents = getKanbanLogs;
+export const getKanbanTaskComments = getKanbanComments;
+
+interface MappedStatuses {
+  status: TaskStatus;
+  delegation_status: DelegationStatus | null;
+}
+
+function mapKanbanStatus(kanbanStatus: string): MappedStatuses {
+  switch (kanbanStatus) {
+    case 'todo':
+    case 'ready':
+    case 'running':
+      return { status: 'in_progress', delegation_status: null };
+    case 'blocked':
+      return { status: 'in_progress', delegation_status: 'blocked' };
+    case 'review':
+      return { status: 'in_review', delegation_status: null };
+    case 'done':
+      return { status: 'in_review', delegation_status: 'review' };
+    case 'archived':
+      return { status: 'done', delegation_status: 'done' };
+    default:
+      return { status: 'in_progress', delegation_status: null };
+  }
+}
+
+function extractAgentControlParentId(kanbanBody: string | null): string | null {
+  if (!kanbanBody) return null;
+  const match = kanbanBody.match(/AgentControl parent task:.*\(([a-f0-9-]{36})\)/i);
+  if (match) return match[1];
+  const bareMatch = kanbanBody.match(/(?:agentcontrol_id|ac_parent):\s*([a-f0-9-]{36})\s*$/im);
+  if (bareMatch) return bareMatch[1];
+  return null;
+}
+
+function extractProfileFromKanban(kanbanTask: KanbanTaskInfo): string | null {
+  if (kanbanTask.assignee) return kanbanTask.assignee;
+  return kanbanTask.latest_run_profile;
+}
+
+export interface SyncResult {
+  parent: Task;
+  subtasks: Task[];
+  imported: number;
+  updated: number;
+}
+
+export function syncKanbanChildrenForTask(parentTask: Task): SyncResult {
+  if (!parentTask.hermes_kanban_task_id) {
+    throw new Error('Parent task has no hermes_kanban_task_id mapping');
+  }
+
+  const children = getKanbanChildren(parentTask.hermes_kanban_task_id);
+  let imported = 0;
+  let updated = 0;
+
+  for (const child of children) {
+    const existing = getTaskByKanbanId(child.kanban_id);
+    const mapped = mapKanbanStatus(child.status);
+    const profile = extractProfileFromKanban(child);
+
+    if (existing) {
+      const result = updateTask(existing.id, {
+        status: mapped.status,
+        delegation_status: mapped.delegation_status,
+        delegation_profile: profile,
+        assignee: profile,
+      });
+      if (result) {
+        updated++;
+        broadcast({ type: 'task_updated', task: result });
+      }
+      continue;
+    }
+
+    const explicitParentId = extractAgentControlParentId(child.body);
+    const acParentId = explicitParentId || parentTask.id;
+    const created = insertTask({
+      title: child.title,
+      description: child.body ?? '',
+      status: mapped.status,
+      parent_task_id: acParentId,
+      delegation_status: mapped.delegation_status,
+      assignee: profile ?? undefined,
+      priority: null,
+      hermes_kanban_task_id: child.kanban_id,
+      delegation_profile: profile,
+      external_source: 'hermes-kanban-sync',
+    });
+    broadcast({ type: 'task_created', task: created });
+    imported++;
+  }
+
+  const subtasks = getSubtasks(parentTask.id);
+  return { parent: parentTask, subtasks, imported, updated };
 }

@@ -3,7 +3,7 @@ import { getAllTasks, getTask, insertTask, updateTask, deleteTask, markTaskViewe
 import { broadcast } from '../events.js';
 import { adapter } from '../app.js';
 import { startTaskChatRun } from './chat.js';
-import { createKanbanTask, getKanbanComments, getKanbanTaskInfo, getKanbanLogs, getKanbanRuns } from '../services/kanban-bridge.js';
+import { createKanbanTask, getKanbanComments, getKanbanTaskInfo, getKanbanLogs, getKanbanRuns, syncKanbanChildrenForTask } from '../services/kanban-bridge.js';
 import { TASK_STATUSES, DELEGATION_STATUSES } from '../../shared/types.js';
 import type { TaskStatus, DelegationStatus } from '../../shared/types.js';
 
@@ -72,7 +72,7 @@ tasksRouter.post('/', (req, res) => {
 });
 
 tasksRouter.patch('/:id', (req, res) => {
-  const allowed = ['title', 'description', 'status', 'priority', 'labels_json', 'assignee', 'delegation_status', 'parent_task_id', 'agent_model', 'reasoning_effort'] as const;
+  const allowed = ['title', 'description', 'status', 'priority', 'labels_json', 'assignee', 'delegation_status', 'parent_task_id', 'agent_model', 'reasoning_effort', 'hermes_kanban_task_id', 'delegation_profile', 'external_source', 'github_pr_url', 'github_pr_number', 'github_pr_state', 'github_pr_head_ref', 'github_pr_head_sha', 'github_checks_status', 'github_checks_summary', 'github_checks_updated_at'] as const;
   const fields: Record<string, unknown> = {};
   for (const key of allowed) {
     if (req.body[key] !== undefined) fields[key] = req.body[key];
@@ -194,6 +194,40 @@ tasksRouter.post('/:id/subtasks', (req, res) => {
   res.status(201).json({ parent: updatedParent ?? parent, subtasks: getSubtasks(req.params.id), runId });
 });
 
+tasksRouter.post('/:id/kanban/sync', (req, res) => {
+  const task = getTask(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+
+  try {
+    const result = syncKanbanChildrenForTask(task);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : 'Sync failed' });
+  }
+});
+
+tasksRouter.get('/:id/kanban', (req, res) => {
+  const task = getTask(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+  if (!task.hermes_kanban_task_id) return res.status(404).json({ error: 'Task has no kanban mapping' });
+
+  const info = getKanbanTaskInfo(task.hermes_kanban_task_id);
+  if (!info) return res.status(404).json({ error: 'Kanban task not found' });
+
+  res.json({ kanban: info });
+});
+
+tasksRouter.get('/:id/kanban/logs', (req, res) => {
+  const task = getTask(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+  if (!task.hermes_kanban_task_id) return res.status(404).json({ error: 'Task has no kanban mapping' });
+
+  const runs = getKanbanRuns(task.hermes_kanban_task_id);
+  const events = getKanbanLogs(task.hermes_kanban_task_id);
+  const comments = getKanbanComments(task.hermes_kanban_task_id);
+  res.json({ runs, events, comments });
+});
+
 tasksRouter.post('/:id/move', (req, res) => {
   const { status } = req.body;
   if (!TASK_STATUSES.includes(status)) {
@@ -204,35 +238,4 @@ tasksRouter.post('/:id/move', (req, res) => {
   if (!updated) return res.status(404).json({ error: 'Task not found' });
   broadcast({ type: 'task_updated', task: updated });
   res.json({ task: updated });
-});
-
-// Kanban metadata endpoint — returns Hermes Kanban task info
-tasksRouter.get('/:id/kanban', (req, res) => {
-  const task = getTask(req.params.id);
-  if (!task) return res.status(404).json({ error: 'Task not found' });
-
-  const kanbanInfo = getKanbanTaskInfo(task.hermes_kanban_task_id);
-  res.json({
-    kanban_id: task.hermes_kanban_task_id,
-    delegation_profile: task.delegation_profile,
-    kanban: kanbanInfo,
-  });
-});
-
-// Kanban logs endpoint — returns event log from Hermes Kanban
-tasksRouter.get('/:id/kanban/logs', (req, res) => {
-  const task = getTask(req.params.id);
-  if (!task) return res.status(404).json({ error: 'Task not found' });
-
-  const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
-  const logs = getKanbanLogs(task.hermes_kanban_task_id, limit);
-  const runs = getKanbanRuns(task.hermes_kanban_task_id, 20);
-  const comments = getKanbanComments(task.hermes_kanban_task_id, 20);
-
-  res.json({
-    kanban_id: task.hermes_kanban_task_id,
-    logs,
-    runs,
-    comments,
-  });
 });
