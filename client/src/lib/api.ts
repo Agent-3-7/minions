@@ -27,6 +27,8 @@ import type {
   SkillInstallResult,
   ClawHubSkillSummary,
   ClawHubScanResult,
+  KanbanLogsResponse,
+  KanbanTaskResponse,
   SubtaskInput,
   SubtaskResponse,
 } from '@shared/types';
@@ -170,6 +172,14 @@ export function createSubtask(taskId: string, input: SubtaskInput) {
     method: 'POST',
     body: JSON.stringify(input),
   });
+}
+
+export function fetchTaskKanban(taskId: string) {
+  return request<KanbanTaskResponse>(`/tasks/${taskId}/kanban`);
+}
+
+export function fetchTaskKanbanLogs(taskId: string, limit = 50) {
+  return request<KanbanLogsResponse>(`/tasks/${taskId}/kanban/logs?limit=${limit}`);
 }
 
 export function fetchScheduledTasks(includeDisabled = true, limit = 100) {

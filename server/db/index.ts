@@ -43,5 +43,7 @@ function ensureColumn(table: string, column: string, ddl: string): void {
 }
 
 ensureColumn('tasks', 'agent_provider', 'TEXT');
+ensureColumn('tasks', 'hermes_kanban_task_id', 'TEXT');
+ensureColumn('tasks', 'delegation_profile', 'TEXT');
 
 export default db;

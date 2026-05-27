@@ -3,6 +3,7 @@ import { getAllTasks, getTask, insertTask, updateTask, deleteTask, markTaskViewe
 import { broadcast } from '../events.js';
 import { adapter } from '../app.js';
 import { startTaskChatRun } from './chat.js';
+import { createKanbanTask, getKanbanComments, getKanbanTaskInfo, getKanbanLogs, getKanbanRuns } from '../services/kanban-bridge.js';
 import { TASK_STATUSES, DELEGATION_STATUSES } from '../../shared/types.js';
 import type { TaskStatus, DelegationStatus } from '../../shared/types.js';
 
@@ -146,6 +147,28 @@ tasksRouter.post('/:id/subtasks', (req, res) => {
     const ctxSuffix = `\n\n---\n*Created from parent task: ${parent.title} (${parent.id})*`;
     const updatedSubtask = updateTask(subtask.id, { description: (subtask.description ?? '') + ctxSuffix });
     if (updatedSubtask) subtask = updatedSubtask;
+
+    // Create a real Hermes Kanban task for the delegated subtask
+    const kanbanAssignProfile = assignee || 'default';
+    try {
+      const kanbanBody = [
+        resolvedDescription,
+        '',
+        '---',
+        `AgentControl parent task: ${parent.title} (${parent.id})`,
+        `AgentControl subtask id: ${subtask.id}`,
+      ].join('\n');
+      const kanbanId = createKanbanTask(title, kanbanAssignProfile, kanbanBody);
+      // Persist the mapping in AgentControl DB
+      const updatedWithKanban = updateTask(subtask.id, {
+        hermes_kanban_task_id: kanbanId,
+        delegation_profile: kanbanAssignProfile,
+      });
+      if (updatedWithKanban) subtask = updatedWithKanban;
+    } catch (e) {
+      // Log but don't fail — the subtask still works without it
+      console.error(`[kanban-bridge] Failed to create Kanban task for subtask ${subtask.id}:`, e instanceof Error ? e.message : e);
+    }
   }
 
   broadcast({ type: 'task_created', task: subtask });
@@ -181,4 +204,35 @@ tasksRouter.post('/:id/move', (req, res) => {
   if (!updated) return res.status(404).json({ error: 'Task not found' });
   broadcast({ type: 'task_updated', task: updated });
   res.json({ task: updated });
+});
+
+// Kanban metadata endpoint — returns Hermes Kanban task info
+tasksRouter.get('/:id/kanban', (req, res) => {
+  const task = getTask(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+
+  const kanbanInfo = getKanbanTaskInfo(task.hermes_kanban_task_id);
+  res.json({
+    kanban_id: task.hermes_kanban_task_id,
+    delegation_profile: task.delegation_profile,
+    kanban: kanbanInfo,
+  });
+});
+
+// Kanban logs endpoint — returns event log from Hermes Kanban
+tasksRouter.get('/:id/kanban/logs', (req, res) => {
+  const task = getTask(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+
+  const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+  const logs = getKanbanLogs(task.hermes_kanban_task_id, limit);
+  const runs = getKanbanRuns(task.hermes_kanban_task_id, 20);
+  const comments = getKanbanComments(task.hermes_kanban_task_id, 20);
+
+  res.json({
+    kanban_id: task.hermes_kanban_task_id,
+    logs,
+    runs,
+    comments,
+  });
 });

@@ -57,6 +57,10 @@ export interface Task {
   assignee: string | null;
   /** Delegation workflow status. */
   delegation_status: DelegationStatus | null;
+  /** Hermes Kanban task id for delegated subtasks. */
+  hermes_kanban_task_id: string | null;
+  /** Delegation profile name (Hermes profile). */
+  delegation_profile: string | null;
   /** Computed: count of direct child subtasks. Not stored in DB. */
   child_count?: number;
 }
@@ -209,6 +213,69 @@ export interface TaskAgentSettings {
   };
 }
 
+export interface KanbanTaskInfo {
+  /** Hermes Kanban task id. */
+  kanban_id: string;
+  /** Title from Hermes Kanban. */
+  title: string;
+  /** Status on the Kanban board. */
+  status: string;
+  /** Assignee profile. */
+  assignee: string | null;
+  /** Task body/description. */
+  body: string | null;
+  /** Most recent run outcome. */
+  outcome: string | null;
+  /** Run summary (most recent completed run). */
+  summary: string | null;
+  /** Run error (most recent failed run). */
+  error: string | null;
+  /** Created at (epoch ms). */
+  created_at: number;
+  /** Started at (epoch ms, if running or done). */
+  started_at: number | null;
+  /** Completed at (epoch ms, if done). */
+  completed_at: number | null;
+  /** Current active Kanban run id, if any. */
+  current_run_id: number | null;
+  /** Latest Kanban run id, if any. */
+  latest_run_id: number | null;
+  /** Latest Kanban run status, if any. */
+  latest_run_status: string | null;
+  /** Latest Kanban run profile, if any. */
+  latest_run_profile: string | null;
+  /** Latest Kanban run metadata JSON, if any. */
+  latest_run_metadata: Record<string, unknown>;
+}
+
+export interface KanbanLogEntry {
+  log_id: number;
+  run_id: number | null;
+  event_kind: string;
+  payload: Record<string, unknown>;
+  created_at: number;
+}
+
+export interface KanbanRunEntry {
+  run_id: number;
+  profile: string | null;
+  status: string;
+  outcome: string | null;
+  started_at: number;
+  ended_at: number | null;
+  summary: string | null;
+  metadata: Record<string, unknown>;
+  error: string | null;
+  worker_pid: number | null;
+}
+
+export interface KanbanCommentEntry {
+  comment_id: number;
+  author: string;
+  body: string;
+  created_at: number;
+}
+
 export interface SubtaskInput {
   title: string;
   description?: string | null;
@@ -223,6 +290,19 @@ export interface SubtaskInput {
 export interface SubtaskResponse {
   parent: Task;
   subtasks: Task[];
+}
+
+export interface KanbanTaskResponse {
+  kanban_id: string | null;
+  delegation_profile: string | null;
+  kanban: KanbanTaskInfo | null;
+}
+
+export interface KanbanLogsResponse {
+  kanban_id: string | null;
+  logs: KanbanLogEntry[];
+  runs: KanbanRunEntry[];
+  comments: KanbanCommentEntry[];
 }
 
 export interface ScheduledTaskOrigin {

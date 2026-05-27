@@ -1,12 +1,12 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useParams, useNavigate, useLocation } from 'react-router-dom';
-import { MoreHorizontal, Trash2, Loader2, Pencil, Check, GitBranch, AlertTriangle, CheckCircle2, Clock, ArrowRight, MessageSquareText, X } from 'lucide-react';
+import { MoreHorizontal, Trash2, Loader2, Pencil, Check, GitBranch, AlertTriangle, CheckCircle2, Clock, ArrowRight, MessageSquareText, X, Activity } from 'lucide-react';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { StatusIcon } from './StatusIcon';
 import { useStore, optimisticMoveTask } from '../lib/store';
 import { toast } from 'sonner';
-import { deleteTask, fetchSubtasks, fetchTask, patchTask, moveTask, markTaskViewed } from '../lib/api';
+import { deleteTask, fetchSubtasks, fetchTask, fetchTaskKanban, fetchTaskKanbanLogs, patchTask, moveTask, markTaskViewed } from '../lib/api';
 import { DELEGATION_STATUSES, TASK_STATUSES } from '@shared/types';
 import { STATUS_META } from '../lib/constants';
 import { timeAgo } from '../lib/format';
@@ -14,7 +14,7 @@ import { isEditableTarget } from '../lib/keyboard';
 import { TaskChat } from './TaskChat';
 import { RenameReveal, useRenameAnimation } from './RenameTitle';
 import type { AgentRunSettings } from '../lib/api';
-import type { DelegationStatus, Task, TaskStatus } from '@shared/types';
+import type { DelegationStatus, KanbanLogsResponse, KanbanTaskResponse, Task, TaskStatus } from '@shared/types';
 
 
 const DELEGATION_META: Record<DelegationStatus, { label: string; icon: React.ReactNode; tint: string }> = {
@@ -33,6 +33,64 @@ function DelegationBadge({ status }: { status: DelegationStatus | null }) {
       {meta.icon}
       {meta.label}
     </span>
+  );
+}
+
+function formatPayload(payload: Record<string, unknown>): string {
+  const compact = JSON.stringify(payload);
+  if (!compact || compact === '{}') return '—';
+  return compact.length > 240 ? `${compact.slice(0, 237)}...` : compact;
+}
+
+function KanbanPanel({ info, logs }: { info: KanbanTaskResponse | null; logs: KanbanLogsResponse | null }) {
+  if (!info?.kanban_id) return null;
+  const kanban = info.kanban;
+  const latestRun = logs?.runs?.[0] ?? null;
+  const latestComment = logs?.comments?.[0] ?? null;
+  const eventRows = logs?.logs ?? [];
+
+  return (
+    <section className="border-b border-zinc-200 bg-zinc-50/50 px-3 py-3 dark:border-zinc-800 dark:bg-zinc-950/40 sm:px-6">
+      <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+        <span className="inline-flex items-center gap-1.5 font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+          <Activity size={13} strokeWidth={2.5} />
+          Hermes Kanban
+        </span>
+        <span className="rounded-md bg-zinc-200 px-1.5 py-0.5 font-mono text-[11px] text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
+          {info.kanban_id}
+        </span>
+        {(kanban?.assignee || info.delegation_profile) && (
+          <span className="rounded-md border border-zinc-200 bg-white px-1.5 py-0.5 text-[11px] text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
+            Profile: {kanban?.assignee ?? info.delegation_profile}
+          </span>
+        )}
+        {kanban?.status && (
+          <span className="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-700 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-300">
+            {kanban.status}
+          </span>
+        )}
+        {latestRun?.status && <span className="text-[11px] text-zinc-500 dark:text-zinc-400">Run #{latestRun.run_id}: {latestRun.status}</span>}
+      </div>
+      {kanban?.summary && (
+        <p className="mb-2 line-clamp-2 text-xs text-zinc-600 dark:text-zinc-300">{kanban.summary}</p>
+      )}
+      {latestComment && (
+        <p className="mb-2 line-clamp-2 text-xs text-zinc-500 dark:text-zinc-400">
+          Latest comment by {latestComment.author}: {latestComment.body}
+        </p>
+      )}
+      <div className="max-h-28 overflow-y-auto rounded-md border border-zinc-200 bg-white/80 dark:border-zinc-800 dark:bg-zinc-900/70">
+        {eventRows.length > 0 ? eventRows.slice(0, 8).map((entry) => (
+          <div key={entry.log_id} className="border-b border-zinc-100 px-2 py-1.5 text-[11px] last:border-b-0 dark:border-zinc-800">
+            <span className="font-mono font-semibold text-zinc-700 dark:text-zinc-200">{entry.event_kind}</span>
+            {entry.run_id && <span className="ml-1 text-zinc-400">run #{entry.run_id}</span>}
+            <span className="ml-2 font-mono text-zinc-500 dark:text-zinc-400">{formatPayload(entry.payload)}</span>
+          </div>
+        )) : (
+          <div className="px-2 py-2 text-[11px] text-zinc-400 dark:text-zinc-500">No Kanban events yet.</div>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -196,6 +254,8 @@ export function TaskDetailPage() {
   const markViewedInFlightRef = useRef<string | null>(null);
   const [detailFetchInFlight, setDetailFetchInFlight] = useState(false);
   const [detailFetchFailed, setDetailFetchFailed] = useState(false);
+  const [kanbanInfo, setKanbanInfo] = useState<KanbanTaskResponse | null>(null);
+  const [kanbanLogs, setKanbanLogs] = useState<KanbanLogsResponse | null>(null);
   const titleAnimation = useRenameAnimation(task?.title ?? '', task?.id ?? null);
 
   useEffect(() => {
@@ -281,6 +341,42 @@ export function TaskDetailPage() {
       cancelled = true;
     };
   }, [task?.id, task?.parent_task_id, setSubtasks]);
+
+  useEffect(() => {
+    if (!task?.hermes_kanban_task_id) {
+      setKanbanInfo(null);
+      setKanbanLogs(null);
+      return;
+    }
+
+    let cancelled = false;
+    function refreshKanban() {
+      if (!task) return;
+      Promise.all([
+        fetchTaskKanban(task.id),
+        fetchTaskKanbanLogs(task.id, 50),
+      ])
+        .then(([info, logs]) => {
+          if (!cancelled) {
+            setKanbanInfo(info);
+            setKanbanLogs(logs);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setKanbanInfo(null);
+            setKanbanLogs(null);
+          }
+        });
+    }
+
+    refreshKanban();
+    const timer = window.setInterval(refreshKanban, 10_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [task?.id, task?.hermes_kanban_task_id]);
 
   useEffect(() => {
     if (!showMenu) return;
@@ -534,6 +630,8 @@ export function TaskDetailPage() {
           </div>
         </div>
       </div>
+
+      <KanbanPanel info={kanbanInfo} logs={kanbanLogs} />
 
       <div className="w-full flex-1 flex flex-row min-h-0">
         <div className="flex-1 flex flex-col min-h-0">
