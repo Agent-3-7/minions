@@ -1,11 +1,16 @@
+const { existsSync } = require('node:fs');
+
+const defaultNode = existsSync('/opt/homebrew/bin/node')
+  ? '/opt/homebrew/bin/node'
+  : process.execPath;
+
 module.exports = {
   apps: [
     {
       name: 'AgentControl',
       cwd: __dirname + '/../..',
-      script: 'npm',
-      args: 'run start',
-      interpreter: 'none',
+      script: 'dist/server/server/index.js',
+      interpreter: process.env.HERMES_PM2_NODE || defaultNode,
       env: {
         NODE_ENV: 'production',
         HOST: '127.0.0.1',

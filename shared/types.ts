@@ -312,6 +312,8 @@ export interface KanbanTaskResponse {
 export interface KanbanLogsResponse {
   kanban_id: string | null;
   logs: KanbanLogEntry[];
+  /** Backward-compatible alias for logs, useful for callers that prefer explicit event naming. */
+  events?: KanbanLogEntry[];
   runs: KanbanRunEntry[];
   comments: KanbanCommentEntry[];
 }
