@@ -207,6 +207,12 @@ tasksRouter.post('/:id/kanban/sync', (req, res) => {
   }
 });
 
+function parseLimit(value: unknown, fallback: number): number {
+  if (typeof value !== 'string') return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 tasksRouter.get('/:id/kanban', (req, res) => {
   const task = getTask(req.params.id);
   if (!task) return res.status(404).json({ error: 'Task not found' });
@@ -215,7 +221,11 @@ tasksRouter.get('/:id/kanban', (req, res) => {
   const info = getKanbanTaskInfo(task.hermes_kanban_task_id);
   if (!info) return res.status(404).json({ error: 'Kanban task not found' });
 
-  res.json({ kanban: info });
+  res.json({
+    kanban_id: task.hermes_kanban_task_id,
+    delegation_profile: task.delegation_profile,
+    kanban: info,
+  });
 });
 
 tasksRouter.get('/:id/kanban/logs', (req, res) => {
@@ -223,10 +233,30 @@ tasksRouter.get('/:id/kanban/logs', (req, res) => {
   if (!task) return res.status(404).json({ error: 'Task not found' });
   if (!task.hermes_kanban_task_id) return res.status(404).json({ error: 'Task has no kanban mapping' });
 
-  const runs = getKanbanRuns(task.hermes_kanban_task_id);
-  const events = getKanbanLogs(task.hermes_kanban_task_id);
-  const comments = getKanbanComments(task.hermes_kanban_task_id);
-  res.json({ runs, events, comments });
+  const limit = parseLimit(req.query.limit, 50);
+  const runs = getKanbanRuns(task.hermes_kanban_task_id, limit);
+  const logs = getKanbanLogs(task.hermes_kanban_task_id, limit);
+  const comments = getKanbanComments(task.hermes_kanban_task_id, limit);
+  const latestRun = runs[0];
+  const latestStatus = latestRun?.status ?? getKanbanTaskInfo(task.hermes_kanban_task_id)?.status;
+  const nextDelegationStatus: DelegationStatus | undefined = latestStatus === 'blocked'
+    ? 'blocked'
+    : latestStatus === 'done' || latestStatus === 'review' || latestRun?.outcome === 'success'
+      ? 'review'
+      : latestStatus === 'running'
+        ? 'running'
+        : undefined;
+  if (nextDelegationStatus && task.delegation_status !== nextDelegationStatus) {
+    const updated = updateTask(task.id, { delegation_status: nextDelegationStatus });
+    if (updated) broadcast({ type: 'task_updated', task: updated });
+  }
+  res.json({
+    kanban_id: task.hermes_kanban_task_id,
+    logs,
+    events: logs,
+    runs,
+    comments,
+  });
 });
 
 tasksRouter.post('/:id/move', async (req, res) => {
